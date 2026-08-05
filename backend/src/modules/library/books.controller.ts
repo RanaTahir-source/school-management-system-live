@@ -1,0 +1,46 @@
+import { Body, Controller, Delete, Get, Param, Patch, Post, Query, UseGuards } from '@nestjs/common';
+import { BooksService } from './books.service';
+import { CreateBookDto, UpdateBookDto } from './dto/create-book.dto';
+import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
+import { RolesGuard } from '../../common/guards/roles.guard';
+import { Roles } from '../../common/decorators/roles.decorator';
+import { CurrentUser } from '../../common/decorators/current-user.decorator';
+import { ScopedUser } from '../../common/utils/school-scope';
+
+@Controller('library/books')
+@UseGuards(JwtAuthGuard, RolesGuard)
+export class BooksController {
+  constructor(private readonly service: BooksService) {}
+
+  @Post()
+  @Roles('DIRECTOR', 'ADMIN', 'PRINCIPAL')
+  create(@Body() dto: CreateBookDto, @CurrentUser() user: ScopedUser) {
+    return this.service.create(dto, user);
+  }
+
+  // Catalog browsing is open to every role, including students, so they can
+  // search what's available before asking to borrow it.
+  @Get()
+  @Roles('DIRECTOR', 'ADMIN', 'PRINCIPAL', 'TEACHER', 'STUDENT', 'ACCOUNTANT')
+  findAll(@CurrentUser() user: ScopedUser, @Query('schoolId') schoolId?: string, @Query('search') search?: string) {
+    return this.service.findAll(user, schoolId, search);
+  }
+
+  @Get(':id')
+  @Roles('DIRECTOR', 'ADMIN', 'PRINCIPAL', 'TEACHER', 'STUDENT', 'ACCOUNTANT')
+  findOne(@Param('id') id: string, @CurrentUser() user: ScopedUser) {
+    return this.service.findOne(id, user);
+  }
+
+  @Patch(':id')
+  @Roles('DIRECTOR', 'ADMIN', 'PRINCIPAL')
+  update(@Param('id') id: string, @Body() dto: UpdateBookDto, @CurrentUser() user: ScopedUser) {
+    return this.service.update(id, dto, user);
+  }
+
+  @Delete(':id')
+  @Roles('DIRECTOR', 'ADMIN')
+  remove(@Param('id') id: string, @CurrentUser() user: ScopedUser) {
+    return this.service.remove(id, user);
+  }
+}

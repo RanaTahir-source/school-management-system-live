@@ -1,0 +1,38 @@
+{
+  "expo": {
+    "name": "School Management System",
+    "slug": "school-management-system",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "light",
+    "scheme": "schoolms",
+    "icon": "./assets/icon.png",
+    "splash": {
+      "image": "./assets/splash-logo.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#0B5D3B"
+    },
+    "assetBundlePatterns": [
+      "**/*"
+    ],
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.ndsa.sms"
+    },
+    "android": {
+      "package": "com.ndsa.sms",
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#0B5D3B"
+      }
+    },
+    "web": {
+      "bundler": "metro"
+    },
+    "extra": {
+      "eas": {
+        "projectId": "991d9532-2354-4281-93ab-85797f9680b9"
+      }
+    }
+  }
+}

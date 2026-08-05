@@ -1,0 +1,35 @@
+{
+  "name": "school-management-system-desktop",
+  "version": "1.0.0",
+  "description": "School Management System - Desktop App",
+  "main": "main.js",
+  "author": "NDSA",
+  "scripts": {
+    "start": "electron .",
+    "dist": "electron-builder --win"
+  },
+  "devDependencies": {
+    "electron": "^33.2.0",
+    "electron-builder": "^25.1.8"
+  },
+  "build": {
+    "appId": "com.ndsa.sms",
+    "productName": "School Management System",
+    "directories": {
+      "output": "release"
+    },
+    "win": {
+      "target": "nsis"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "School Management System"
+    }
+  },
+  "allowScripts": {
+    "electron@33.4.11": true
+  }
+}
