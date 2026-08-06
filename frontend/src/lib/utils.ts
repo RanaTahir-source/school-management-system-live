@@ -29,9 +29,11 @@ export function formatCurrency(amount: number | string) {
 }
 
 export function roleLabel(role: string) {
+  if (!role) return '';
   return role
-    .toLowerCase()
-    .split('_')
-    .map((w) => w[0].toUpperCase() + w.slice(1))
-    .join(' ');
+  .toLowerCase()
+  .split('_')
+  .filter(Boolean)
+  .map((w) => (w[0] ? w[0].toUpperCase() + w.slice(1) : w))
+  .join(' ');
 }
