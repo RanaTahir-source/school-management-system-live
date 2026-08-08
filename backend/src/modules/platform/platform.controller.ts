@@ -42,4 +42,9 @@ export class PlatformController {
   unblock(@Param('id') id: string, @CurrentUser() user: { userId: string }) {
     return this.service.setBlocked(id, false, user);
   }
+
+  @Post('backfill-tenant-code')
+  backfillTenantCode(@CurrentUser() user: { userId: string }) {
+    return this.service.backfillTenantCode(user);
+  }
 }
