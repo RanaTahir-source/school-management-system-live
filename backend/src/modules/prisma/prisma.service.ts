@@ -272,6 +272,78 @@ export class PrismaService implements OnModuleInit, OnModuleDestroy {
     return this.prisma.schoolSetting;
   }
 
+  get admissionEnquiry() {
+    return this.prisma.admissionEnquiry;
+  }
+
+  get admissionFollowUp() {
+    return this.prisma.admissionFollowUp;
+  }
+
+  get aiLessonPlan() {
+    return this.prisma.aiLessonPlan;
+  }
+
+  get aiQuestionPaper() {
+    return this.prisma.aiQuestionPaper;
+  }
+
+  get asset() {
+    return this.prisma.asset;
+  }
+
+  get assetMaintenanceLog() {
+    return this.prisma.assetMaintenanceLog;
+  }
+
+  get chatThread() {
+    return this.prisma.chatThread;
+  }
+
+  get chatThreadMember() {
+    return this.prisma.chatThreadMember;
+  }
+
+  get chatMessage() {
+    return this.prisma.chatMessage;
+  }
+
+  get chatCall() {
+    return this.prisma.chatCall;
+  }
+
+  get inventoryItem() {
+    return this.prisma.inventoryItem;
+  }
+
+  get inventoryTransaction() {
+    return this.prisma.inventoryTransaction;
+  }
+
+  get manualDocument() {
+    return this.prisma.manualDocument;
+  }
+
+  get meeting() {
+    return this.prisma.meeting;
+  }
+
+  get meetingAttendee() {
+    return this.prisma.meetingAttendee;
+  }
+
+  get onlinePaymentAttempt() {
+    return this.prisma.onlinePaymentAttempt;
+  }
+
+  get staffTask() {
+    return this.prisma.staffTask;
+  }
+
+  get suggestion() {
+    return this.prisma.suggestion;
+  }
+
   // Used only by BackupService to dynamically iterate every model for a
   // full-database export - normal services should always use the named
   // getters above instead of this.
