@@ -28,6 +28,21 @@ type FinanceDashboardSummary = {
 
 type ClassRecord = { id: string; name: string; isActive: boolean };
 
+type BranchSummary = {
+  branches: {
+    branchId: string;
+    branchName: string;
+    schoolId: string;
+    schoolName: string;
+    genderScope: 'BOYS' | 'GIRLS' | 'MIXED';
+    students: number;
+    teachers: number;
+    staff: number;
+    classes: number;
+  }[];
+  combined: { students: number; teachers: number; staff: number; classes: number };
+};
+
 type SchoolReport = {
   schoolId: string;
   schoolName: string;
@@ -74,6 +89,11 @@ export default function DashboardPage() {
   const classesQuery = useQuery({
     queryKey: ['classes'],
     queryFn: () => api.get<ClassRecord[]>('/classes'),
+  });
+
+  const branchSummaryQuery = useQuery({
+    queryKey: ['reports', 'branch-summary'],
+    queryFn: () => api.get<BranchSummary>('/reports/branch-summary'),
   });
 
   const primarySchoolId = user?.schoolId ?? schoolsQuery.data?.[0]?.id;
@@ -156,6 +176,77 @@ export default function DashboardPage() {
           </Card>
         ))}
       </div>
+
+      {(branchSummaryQuery.data?.branches.length ?? 0) > 1 && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <MapPin className="h-4 w-4 text-primary" />
+              Students &amp; Teachers by Branch
+            </CardTitle>
+            <CardDescription>Enrollment broken down per campus - not just one combined total</CardDescription>
+          </CardHeader>
+          <CardContent className="pt-0">
+            {branchSummaryQuery.isLoading ? (
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                {Array.from({ length: 3 }).map((_, i) => (
+                  <Skeleton key={i} className="h-24 w-full" />
+                ))}
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                {branchSummaryQuery.data!.branches.map((b) => (
+                  <div key={b.branchId} className="rounded-lg border border-border p-3.5">
+                    <div className="flex items-center justify-between gap-2">
+                      <p className="text-sm font-medium text-foreground">{b.branchName}</p>
+                      <Badge variant="secondary" className="shrink-0 text-[10px]">
+                        {b.genderScope === 'MIXED' ? 'Co-ed' : b.genderScope === 'BOYS' ? 'Boys' : 'Girls'}
+                      </Badge>
+                    </div>
+                    <div className="mt-2.5 grid grid-cols-3 gap-2 text-center">
+                      <div>
+                        <p className="text-lg font-semibold tabular-nums text-foreground">{b.students}</p>
+                        <p className="text-[11px] text-muted-foreground">Students</p>
+                      </div>
+                      <div>
+                        <p className="text-lg font-semibold tabular-nums text-foreground">{b.teachers}</p>
+                        <p className="text-[11px] text-muted-foreground">Teachers</p>
+                      </div>
+                      <div>
+                        <p className="text-lg font-semibold tabular-nums text-foreground">{b.classes}</p>
+                        <p className="text-[11px] text-muted-foreground">Classes</p>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+                <div className="rounded-lg border border-primary/30 bg-primary/5 p-3.5 sm:col-span-2 lg:col-span-1">
+                  <p className="text-sm font-medium text-foreground">All Branches Combined</p>
+                  <div className="mt-2.5 grid grid-cols-3 gap-2 text-center">
+                    <div>
+                      <p className="text-lg font-semibold tabular-nums text-primary">
+                        {branchSummaryQuery.data!.combined.students}
+                      </p>
+                      <p className="text-[11px] text-muted-foreground">Students</p>
+                    </div>
+                    <div>
+                      <p className="text-lg font-semibold tabular-nums text-primary">
+                        {branchSummaryQuery.data!.combined.teachers}
+                      </p>
+                      <p className="text-[11px] text-muted-foreground">Teachers</p>
+                    </div>
+                    <div>
+                      <p className="text-lg font-semibold tabular-nums text-primary">
+                        {branchSummaryQuery.data!.combined.classes}
+                      </p>
+                      <p className="text-[11px] text-muted-foreground">Classes</p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      )}
 
       {canViewFinance && (
         <Card>

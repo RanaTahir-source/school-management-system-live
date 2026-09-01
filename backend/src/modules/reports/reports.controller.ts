@@ -119,6 +119,16 @@ export class ReportsController {
     res.send(csv);
   }
 
+  // ── Branch-wise summary (students/teachers/staff/classes per branch) ──
+  // Chairman included - this is the "by campus" breakdown for their
+  // platform-wide dashboard, alongside Director/Admin/Principal who see it
+  // for their own school's branches.
+  @Get('branch-summary')
+  @Roles('CHAIRMAN', 'DIRECTOR', 'ADMIN', 'PRINCIPAL')
+  branchSummary(@CurrentUser() user: ScopedUser) {
+    return this.service.branchSummary(user);
+  }
+
   // ── Cross-exam performance trend ──
   @Get('performance-trend')
   @Roles('DIRECTOR', 'ADMIN', 'PRINCIPAL', 'TEACHER')

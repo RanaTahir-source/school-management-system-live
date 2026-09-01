@@ -152,4 +152,16 @@ export class PlatformService {
 
     return updated;
   }
+  // One-off fix: backfills tenantCode for accounts that predate the Login ID
+  // system (e.g. this grandfathered Chairman+Director) so POST /schools/mine
+  // stops rejecting them with "no tenant code assigned". Safe to call more
+  // than once - no-ops if a tenantCode is already set.
+  async backfillTenantCode(currentUser: CurrentUser) {
+    const me = await this.prisma.user.findUnique({ where: { id: currentUser.userId } });
+    if (!me) throw new NotFoundException('User not found');
+    if (me.tenantCode) return { tenantCode: me.tenantCode, alreadySet: true };
+    const tenantCode = await nextTenantCode(this.prisma);
+    await this.prisma.user.update({ where: { id: me.id }, data: { tenantCode } });
+    return { tenantCode, alreadySet: false };
+  }
 }

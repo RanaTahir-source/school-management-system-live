@@ -173,4 +173,76 @@ export class ReportsService {
 
     return { classId, className: klass.name, academicYearId, trend };
   }
+
+  // ── Branch-wise summary: students/teachers/classes per branch, for the
+  // Chairman/Director dashboard "by campus" breakdown. Unlike most report
+  // methods this groups by BRANCH (not just school) since a single school
+  // can have several branches (e.g. Jandanwala/Ali Khel/Rodi) and the whole
+  // point is to see each one's numbers separately instead of one combined
+  // total - GET /reports/branch-summary ──
+  async branchSummary(currentUser: ScopedUser) {
+    const scopedSchoolId = resolveSchoolScope(currentUser, undefined);
+
+    const branches = await this.prisma.branch.findMany({
+      where: {
+        deletedAt: null,
+        ...(scopedSchoolId ? { schoolId: scopedSchoolId } : {}),
+      },
+      select: {
+        id: true,
+        name: true,
+        genderScope: true,
+        schoolId: true,
+        school: { select: { name: true } },
+      },
+      orderBy: { name: 'asc' },
+    });
+
+    const perBranch = await Promise.all(
+      branches.map(async (branch) => {
+        const [studentCount, teacherCount, staffCount, classCount] = await Promise.all([
+          this.prisma.studentProfile.count({
+            where: {
+              deletedAt: null,
+              status: 'ACTIVE',
+              section: { class: { branchId: branch.id } },
+            },
+          }),
+          this.prisma.teacherProfile.count({
+            where: { deletedAt: null, isActive: true, user: { branchId: branch.id } },
+          }),
+          this.prisma.staffProfile.count({
+            where: { deletedAt: null, isActive: true, user: { branchId: branch.id } },
+          }),
+          this.prisma.class.count({
+            where: { deletedAt: null, isActive: true, branchId: branch.id },
+          }),
+        ]);
+
+        return {
+          branchId: branch.id,
+          branchName: branch.name,
+          schoolId: branch.schoolId,
+          schoolName: branch.school.name,
+          genderScope: branch.genderScope,
+          students: studentCount,
+          teachers: teacherCount,
+          staff: staffCount,
+          classes: classCount,
+        };
+      }),
+    );
+
+    const combined = perBranch.reduce(
+      (acc, b) => ({
+        students: acc.students + b.students,
+        teachers: acc.teachers + b.teachers,
+        staff: acc.staff + b.staff,
+        classes: acc.classes + b.classes,
+      }),
+      { students: 0, teachers: 0, staff: 0, classes: 0 },
+    );
+
+    return { branches: perBranch, combined };
+  }
 }
