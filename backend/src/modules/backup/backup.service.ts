@@ -1,4 +1,5 @@
 import { Injectable, Logger, NotFoundException } from '@nestjs/common';
+import { Cron, CronExpression } from '@nestjs/schedule';
 import { Prisma } from '@prisma/client';
 import { existsSync, mkdirSync, statSync, writeFileSync } from 'fs';
 import { join } from 'path';
@@ -87,6 +88,26 @@ export class BackupService {
       include: { triggeredBy: { select: { fullName: true } } },
       orderBy: { createdAt: 'desc' },
     });
+  }
+
+  // Automated daily backup - no human user triggers this, so it's attributed
+  // to the oldest CHAIRMAN account (the platform owner) rather than adding a
+  // nullable-user migration just for this. Shows up in the Backups tab like
+  // any other run, just with "Triggered By" = the Chairman's name - the time
+  // stamp and the fact it fired at 2 AM makes it obvious it was automatic.
+  // Runs at 02:00 server time (Railway containers run UTC) every day.
+  @Cron(CronExpression.EVERY_DAY_AT_2AM, { name: 'daily-backup' })
+  async runScheduledBackup() {
+    const chairman = await this.prisma.user.findFirst({
+      where: { userRoles: { some: { role: { name: 'CHAIRMAN' } } } },
+      orderBy: { createdAt: 'asc' },
+    });
+    if (!chairman) {
+      this.logger.warn('Scheduled daily backup skipped - no CHAIRMAN user exists yet to attribute it to');
+      return;
+    }
+    this.logger.log('Running scheduled daily backup...');
+    await this.create({ userId: chairman.id });
   }
 
   async getFileTarget(id: string) {

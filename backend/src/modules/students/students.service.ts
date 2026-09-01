@@ -6,6 +6,8 @@ import { UpdateStudentDto } from './dto/update-student.dto';
 import { MarkStudentLeftDto } from './dto/mark-student-left.dto';
 import { assertSchoolAccess, resolveSchoolScope, ScopedUser } from '../../common/utils/school-scope';
 import { buildLoginId, buildAliasEmail } from '../../common/utils/login-id';
+import { buildExcelTemplate, BulkImportSummary } from '../../common/utils/excel-import';
+import { savePersonPhoto } from '../../common/utils/photo-storage';
 
 const USER_SELECT = { id: true, fullName: true, email: true, loginId: true, isActive: true, schoolId: true } as const;
 
@@ -85,6 +87,16 @@ export class StudentsService {
           entityId: profile.id,
         },
       });
+
+      // Closes the loop with the Admissions CRM: if this student was admitted
+      // from a logged enquiry, mark the lead ADMITTED and link it to the real
+      // StudentProfile so its follow-up history stays attached.
+      if (dto.enquiryId) {
+        await tx.admissionEnquiry.update({
+          where: { id: dto.enquiryId },
+          data: { status: 'ADMITTED', convertedStudentId: profile.id, convertedAt: new Date() },
+        });
+      }
 
       return this.attachSafeUser(profile, user);
     });
@@ -233,8 +245,165 @@ export class StudentsService {
     });
   }
 
+  // Saves the uploaded headshot to local disk (filename = the student's own
+  // profile id, so re-uploading overwrites the old photo with no orphaned
+  // files) and records the fileKey on photoUrl. Used by ID cards, fee
+  // receipts, and result cards (see common/utils/photo-storage.ts).
+  async uploadPhoto(id: string, file: Express.Multer.File, currentUser: ScopedUser) {
+    const profile = await this.findOne(id, currentUser);
+    const ext = (file.originalname.split('.').pop() || 'jpg').toLowerCase().replace(/[^a-z0-9]/g, '') || 'jpg';
+    const fileKey = savePersonPhoto('photos/students', `${profile.id}.${ext}`, file.buffer);
+    return this.prisma.studentProfile.update({ where: { id }, data: { photoUrl: fileKey } });
+  }
+
   private attachSafeUser(profile: any, user: any) {
     const { passwordHash, ...safeUser } = user;
     return { ...profile, user: safeUser };
+  }
+
+  // The downloadable .xlsx an Admin/Director/Principal fills in before
+  // uploading. Column order matters to the ADMIN filling it in, not to the
+  // parser (parseExcelRows reads by header name, not position).
+  async buildImportTemplate(): Promise<Buffer> {
+    return buildExcelTemplate([
+      { header: 'Full Name', example: 'Ali Hassan' },
+      { header: 'Admission No', example: 'JND-2026-045' },
+      { header: 'Class Name', example: 'Class 3' },
+      { header: 'Section Name', example: 'A' },
+      { header: 'Gender', example: 'MALE' },
+      { header: 'Date of Birth', example: '2016-05-12' },
+      { header: 'Guardian Name', example: 'Hassan Mahmood' },
+      { header: 'Guardian Phone', example: '0300-1234567' },
+      { header: 'Guardian CNIC', example: '35201-1234567-1' },
+      { header: 'Address', example: 'Street 4, Jandanwala' },
+      { header: 'Email', example: '(leave blank to auto-generate)' },
+      { header: 'Password', example: '(leave blank for default ChangeMe123!)' },
+    ]);
+  }
+
+  // Row-by-row import: one bad row (duplicate admission no, missing class,
+  // etc.) never blocks the rest of the file - each row gets its own
+  // create-or-report-error outcome, same as a human typing them in one at a
+  // time via the "Add Student" dialog. Reuses the exact same Login ID /
+  // password / role-grant logic as create() so imported students behave
+  // identically to manually-added ones.
+  async bulkImport(
+    rows: Record<string, any>[],
+    schoolId: string,
+    branchId: string,
+    currentUser: ScopedUser & { userId: string },
+  ): Promise<BulkImportSummary> {
+    assertSchoolAccess(currentUser, schoolId);
+
+    const role = await this.prisma.role.findUnique({ where: { name: 'STUDENT' } });
+    if (!role) throw new NotFoundException('STUDENT role not found - was the database seeded?');
+
+    const school = await this.prisma.school.findUnique({ where: { id: schoolId } });
+    const branch = await this.prisma.branch.findFirst({ where: { id: branchId, schoolId } });
+    if (!branch) throw new BadRequestException('That branch does not belong to the selected school');
+    if (!school?.tenantCode || !school.schoolSeq || !branch.branchSeq) {
+      throw new BadRequestException(
+        'This school/branch has no Login ID codes yet - it predates the Login ID system or was created without them',
+      );
+    }
+
+    const activeYear = await this.prisma.academicYear.findFirst({ where: { schoolId, isActive: true } });
+
+    const results: BulkImportSummary['results'] = [];
+
+    for (let i = 0; i < rows.length; i++) {
+      const rowNum = i + 2; // header is row 1
+      const r = rows[i];
+      const admissionNo = String(r.admissionNo ?? '').trim();
+      try {
+        const fullName = String(r.fullName ?? '').trim();
+        if (!fullName) throw new Error('Full Name is required');
+        if (!admissionNo) throw new Error('Admission No is required');
+
+        const existingAdmission = await this.prisma.studentProfile.findUnique({ where: { admissionNo } });
+        if (existingAdmission) throw new Error(`Admission No "${admissionNo}" already exists`);
+
+        let email: string | undefined = r.email ? String(r.email).trim() : undefined;
+        if (email) {
+          const existingEmail = await this.prisma.user.findUnique({ where: { email } });
+          if (existingEmail) throw new Error(`Email "${email}" is already in use`);
+        }
+
+        let sectionId: string | undefined;
+        if (r.className && r.sectionName) {
+          if (!activeYear) throw new Error('No active Academic Year found for this school');
+          const klass = await this.prisma.class.findFirst({
+            where: { branchId, name: String(r.className).trim() },
+          });
+          if (!klass) throw new Error(`Class "${r.className}" not found in this branch`);
+          const section = await this.prisma.section.findFirst({
+            where: { classId: klass.id, academicYearId: activeYear.id, name: String(r.sectionName).trim() },
+          });
+          if (!section) throw new Error(`Section "${r.sectionName}" not found in class "${r.className}"`);
+          sectionId = section.id;
+        }
+
+        const loginId = await buildLoginId(this.prisma, {
+          tenantCode: school.tenantCode,
+          schoolSeq: school.schoolSeq,
+          branchSeq: branch.branchSeq,
+          roleName: 'STUDENT',
+        });
+        const finalEmail = email ?? (await buildAliasEmail(this.prisma, { label: admissionNo, schoolCode: school.code }));
+        const rawPassword = r.password ? String(r.password) : 'ChangeMe123!';
+        const passwordHash = await bcrypt.hash(rawPassword, 10);
+
+        const genderRaw = r.gender ? String(r.gender).trim().toUpperCase() : undefined;
+        const gender = genderRaw === 'MALE' || genderRaw === 'FEMALE' ? (genderRaw as 'MALE' | 'FEMALE') : undefined;
+
+        await this.prisma.$transaction(async (tx) => {
+          const user = await tx.user.create({
+            data: {
+              fullName,
+              email: finalEmail,
+              loginId,
+              passwordHash,
+              schoolId,
+              branchId,
+              userRoles: { create: { roleId: role.id } },
+            },
+          });
+          const profile = await tx.studentProfile.create({
+            data: {
+              userId: user.id,
+              admissionNo,
+              dateOfBirth: r.dateOfBirth ? new Date(r.dateOfBirth) : undefined,
+              gender,
+              guardianName: r.guardianName ? String(r.guardianName) : undefined,
+              guardianPhone: r.guardianPhone ? String(r.guardianPhone) : undefined,
+              guardianCnic: r.guardianCnic ? String(r.guardianCnic) : undefined,
+              address: r.address ? String(r.address) : undefined,
+              sectionId,
+            },
+          });
+          await tx.auditLog.create({
+            data: {
+              userId: currentUser.userId,
+              schoolId,
+              action: 'STUDENT_CREATED',
+              entity: 'StudentProfile',
+              entityId: profile.id,
+              metadata: { via: 'bulk-import', loginId },
+            },
+          });
+        });
+
+        results.push({ row: rowNum, status: 'created', identifier: admissionNo, message: `Login ID: ${loginId}` });
+      } catch (e: any) {
+        results.push({ row: rowNum, status: 'error', identifier: admissionNo || undefined, message: e?.message ?? 'Unknown error' });
+      }
+    }
+
+    return {
+      total: rows.length,
+      created: results.filter((r) => r.status === 'created').length,
+      failed: results.filter((r) => r.status === 'error').length,
+      results,
+    };
   }
 }

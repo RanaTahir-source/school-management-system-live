@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
+import { ScheduleModule } from '@nestjs/schedule';
 import { PrismaModule } from './modules/prisma/prisma.module';
 import { AuthModule } from './modules/auth/auth.module';
 import { UsersModule } from './modules/users/users.module';
@@ -31,10 +32,21 @@ import { PlatformModule } from './modules/platform/platform.module';
 import { BackupModule } from './modules/backup/backup.module';
 import { AuditLogsModule } from './modules/audit-logs/audit-logs.module';
 import { SettingsModule } from './modules/settings/settings.module';
+import { IdCardsModule } from './modules/id-cards/id-cards.module';
+import { AdmissionsModule } from './modules/admissions/admissions.module';
+import { OnlinePaymentsModule } from './modules/online-payments/online-payments.module';
+import { AiModule } from './modules/ai/ai.module';
+import { InventoryModule } from './modules/inventory/inventory.module';
+import { MeetingsModule } from './modules/meetings/meetings.module';
+import { StaffTasksModule } from './modules/staff-tasks/staff-tasks.module';
+import { SuggestionsModule } from './modules/suggestions/suggestions.module';
+import { ManualsModule } from './modules/manuals/manuals.module';
+import { ChatModule } from './modules/chat/chat.module';
 
 @Module({
   imports: [
     ConfigModule.forRoot({ isGlobal: true }),
+    ScheduleModule.forRoot(),
     PrismaModule,
     AuthModule,
     UsersModule,
@@ -65,6 +77,16 @@ import { SettingsModule } from './modules/settings/settings.module';
     BackupModule,
     AuditLogsModule,
     SettingsModule,
+    IdCardsModule,
+    AdmissionsModule,
+    OnlinePaymentsModule,
+    AiModule,
+    InventoryModule,
+    MeetingsModule,
+    StaffTasksModule,
+    SuggestionsModule,
+    ManualsModule,
+    ChatModule,
     PlatformModule,
   ],
 })

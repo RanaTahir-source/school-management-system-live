@@ -72,6 +72,16 @@ model School {
   onlineClasses OnlineClass[]
   leaveRequests LeaveRequest[]
   settings SchoolSetting?
+  admissionEnquiries AdmissionEnquiry[]
+  aiQuestionPapers AiQuestionPaper[]
+  aiLessonPlans    AiLessonPlan[]
+  inventoryItems   InventoryItem[]
+  assets           Asset[]
+  meetings         Meeting[]
+  staffTasks       StaffTask[]
+  suggestions      Suggestion[]
+  manuals          ManualDocument[]
+  chatThreads      ChatThread[]
 
   createdAt DateTime  @default(now()) @map("created_at")
   updatedAt DateTime  @updatedAt @map("updated_at")
@@ -106,6 +116,13 @@ model Branch {
   vehicles Vehicle[]
   routes   Route[]
   hostelRooms HostelRoom[]
+  admissionEnquiries AdmissionEnquiry[]
+  inventoryItems InventoryItem[]
+  assets Asset[]
+  meetings Meeting[]
+  staffTasks StaffTask[]
+  suggestions Suggestion[]
+  chatThreads ChatThread[]
 
   createdAt DateTime  @default(now()) @map("created_at")
   updatedAt DateTime  @updatedAt @map("updated_at")
@@ -191,6 +208,28 @@ model User {
   leaveRequestsSubmitted LeaveRequest[] @relation("LeaveRequestSubmittedBy")
   backupsTriggered       BackupLog[] @relation("BackupTriggeredBy")
   schoolSettingsUpdated  SchoolSetting[] @relation("SchoolSettingUpdatedBy")
+  admissionEnquiriesAssigned AdmissionEnquiry[] @relation("EnquiryAssignedTo")
+  admissionEnquiriesCreated  AdmissionEnquiry[] @relation("EnquiryCreatedBy")
+  admissionFollowUpsCreated  AdmissionFollowUp[] @relation("FollowUpCreatedBy")
+  onlinePaymentsInitiated    OnlinePaymentAttempt[] @relation("OnlinePaymentInitiatedBy")
+  onlinePaymentsReviewed     OnlinePaymentAttempt[] @relation("OnlinePaymentReviewedBy")
+  aiQuestionPapersCreated    AiQuestionPaper[] @relation("AiQuestionPaperCreatedBy")
+  aiLessonPlansCreated       AiLessonPlan[] @relation("AiLessonPlanCreatedBy")
+  inventoryTransactionsCreated InventoryTransaction[] @relation("InventoryTransactionCreatedBy")
+  assetsAssigned               Asset[] @relation("AssetAssignedTo")
+  assetMaintenanceLogsCreated  AssetMaintenanceLog[] @relation("AssetMaintenanceCreatedBy")
+  meetingsCreated              Meeting[] @relation("MeetingCreatedBy")
+  meetingAttendances           MeetingAttendee[] @relation("MeetingAttendeeUser")
+  staffTasksAssignedToMe       StaffTask[] @relation("StaffTaskAssignedTo")
+  staffTasksAssignedByMe       StaffTask[] @relation("StaffTaskAssignedBy")
+  suggestionsSubmitted         Suggestion[] @relation("SuggestionSubmittedBy")
+  suggestionsResponded         Suggestion[] @relation("SuggestionRespondedBy")
+  manualsCreated               ManualDocument[] @relation("ManualCreatedBy")
+  manualsUpdated               ManualDocument[] @relation("ManualUpdatedBy")
+  chatThreadsCreated           ChatThread[] @relation("ChatThreadCreatedBy")
+  chatThreadMemberships        ChatThreadMember[] @relation("ChatThreadMemberUser")
+  chatMessagesSent             ChatMessage[] @relation("ChatMessageSender")
+  chatCallsStarted             ChatCall[] @relation("ChatCallStartedBy")
 
   createdAt    DateTime  @default(now()) @map("created_at")
   updatedAt    DateTime  @updatedAt @map("updated_at")
@@ -372,6 +411,8 @@ model Class {
   feeStructures FeeStructure[]
   announcements Announcement[]
   studyMaterials StudyMaterial[]
+  aiQuestionPapers AiQuestionPaper[]
+  aiLessonPlans    AiLessonPlan[]
 
   createdAt DateTime  @default(now()) @map("created_at")
   updatedAt DateTime  @updatedAt @map("updated_at")
@@ -405,6 +446,7 @@ model Section {
   timetableSlots TimetableSlot[]
   homework       Homework[]
   onlineClasses  OnlineClass[]
+  chatThreads    ChatThread[]
 
   createdAt DateTime  @default(now()) @map("created_at")
   updatedAt DateTime  @updatedAt @map("updated_at")
@@ -463,6 +505,8 @@ model StudentProfile {
   documents         Document[]
   certificates      Certificate[]
   leaveRequests     LeaveRequest[]
+  sourceEnquiry     AdmissionEnquiry? // the CRM lead this student was converted from, if any
+  inventoryTransactions InventoryTransaction[]
 
   isActive  Boolean   @default(true) @map("is_active")
 
@@ -491,6 +535,103 @@ enum EnrollmentStatus {
 }
 
 // ─────────────────────────────────────────────
+// ADMISSIONS CRM  (enquiries/leads, follow-ups, lead sources — closes the
+// "no Admissions CRM" gap vs. competitor products. A prospective family's
+// interest is logged here BEFORE they become a real StudentProfile; once
+// admitted, convertedStudentId links back to the real enrolled student so
+// the lead's full follow-up history stays attached to their record.)
+// ─────────────────────────────────────────────
+model AdmissionEnquiry {
+  id       String @id @default(uuid())
+  schoolId String @map("school_id")
+  school   School @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+
+  branchId String? @map("branch_id") // null until the family/staff picks a campus
+  branch   Branch? @relation(fields: [branchId], references: [id])
+
+  childName        String  @map("child_name")
+  desiredClassName String? @map("desired_class_name") // free text (e.g. "Class 3") - no real Class row required yet
+  parentName       String  @map("parent_name")
+  phone            String
+  email            String?
+  address          String?
+
+  source AdmissionSource  @default(OTHER)
+  status AdmissionStatus  @default(NEW)
+
+  assignedToId String? @map("assigned_to_id") // staff member currently owning this lead
+  assignedTo   User?   @relation("EnquiryAssignedTo", fields: [assignedToId], references: [id])
+
+  notes String? // general free-text notes, separate from the timestamped follow-up log below
+
+  nextFollowUpDate DateTime? @map("next_follow_up_date") @db.Date
+
+  // Set once the family actually enrolls, via StudentsService.create's optional
+  // enquiryId - links this lead to the real StudentProfile it became.
+  convertedStudentId String?         @unique @map("converted_student_id")
+  convertedStudent   StudentProfile? @relation(fields: [convertedStudentId], references: [id])
+  convertedAt        DateTime?       @map("converted_at")
+
+  // Set only when this enquiry came in through the public/unauthenticated
+  // "Online Admission Enquiry" form (see AdmissionsController) - null for
+  // enquiries a staff member logged manually (walk-in, phone call, etc.).
+  submittedOnline Boolean @default(false) @map("submitted_online")
+
+  createdById String? @map("created_by_id")
+  createdBy   User?   @relation("EnquiryCreatedBy", fields: [createdById], references: [id])
+
+  followUps AdmissionFollowUp[]
+
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime  @updatedAt @map("updated_at")
+  deletedAt DateTime? @map("deleted_at")
+
+  @@map("admission_enquiries")
+}
+
+enum AdmissionSource {
+  WALK_IN
+  PHONE
+  REFERRAL
+  SOCIAL_MEDIA
+  WEBSITE
+  ADVERTISEMENT
+  OTHER
+}
+
+// A lead's stage in the pipeline - NEW (just logged) through ADMITTED
+// (converted to a real student) or REJECTED/LOST (didn't proceed).
+enum AdmissionStatus {
+  NEW
+  CONTACTED
+  FOLLOW_UP
+  TRIAL_SCHEDULED
+  ADMITTED
+  REJECTED
+  LOST
+}
+
+// Timestamped activity log for one enquiry - "called family, they'll decide
+// by Friday", "visited campus for a trial day", etc. Distinct from
+// AdmissionEnquiry.notes so the history of contact attempts is never
+// overwritten, only appended to.
+model AdmissionFollowUp {
+  id        String           @id @default(uuid())
+  enquiryId String           @map("enquiry_id")
+  enquiry   AdmissionEnquiry @relation(fields: [enquiryId], references: [id], onDelete: Cascade)
+
+  note             String
+  nextFollowUpDate DateTime? @map("next_follow_up_date") @db.Date
+
+  createdById String? @map("created_by_id")
+  createdBy   User?   @relation("FollowUpCreatedBy", fields: [createdById], references: [id])
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@map("admission_follow_ups")
+}
+
+// ─────────────────────────────────────────────
 // TEACHER PROFILE  (1:1 extension of User for users with TEACHER role)
 // ─────────────────────────────────────────────
 model TeacherProfile {
@@ -504,6 +645,7 @@ model TeacherProfile {
   joiningDate      DateTime @default(now()) @map("joining_date")
   cnic             String?
   address          String?
+  photoUrl         String?  @map("photo_url") // teacher's photo, shown on ID cards
 
   documents Document[]
 
@@ -826,6 +968,7 @@ model FeeInvoice {
 
   items    FeeInvoiceItem[]
   payments FeePayment[]
+  onlinePaymentAttempts OnlinePaymentAttempt[]
 
   totalAmount Decimal          @default(0) @db.Decimal(12, 2) @map("total_amount") // sum of items net of concession
   paidAmount  Decimal          @default(0) @db.Decimal(12, 2) @map("paid_amount")
@@ -872,9 +1015,145 @@ model FeePayment {
   incomeRecordId String?       @unique @map("income_record_id") // linked ledger entry
   incomeRecord   IncomeRecord? @relation(fields: [incomeRecordId], references: [id])
 
+  onlinePaymentAttempt OnlinePaymentAttempt? // set if this payment came in through the online gateway/proof-upload flow
+
   createdAt DateTime @default(now()) @map("created_at")
 
   @@map("fee_payments")
+}
+
+// ─────────────────────────────────────────────
+// ONLINE FEE PAYMENT  (closes the "no online fee payment / gateway
+// integration" gap. Two flows share this one model:
+//  1) Proof-based (BANK_TRANSFER / JAZZCASH / EASYPAISA "send money, then
+//     upload a screenshot") - fully working today, no external merchant
+//     account needed. A parent sends money to the school's own JazzCash/
+//     EasyPaisa/bank account (from SchoolSetting) and uploads a receipt;
+//     an Accountant/Director reviews and approves it, which creates the real
+//     FeePayment via the existing FeePaymentService.record() logic.
+//  2) Gateway-redirect (CARD, and JAZZCASH/EASYPAISA in API mode) - requires
+//     the school's own real merchant API credentials (env vars) which don't
+//     exist yet; OnlinePaymentsService.initiate() throws a clear
+//     "not configured" error for these until the school provides them. The
+//     model already has the fields (gatewayTxnRef/gatewayResponse) ready so
+//     no further migration is needed once real credentials are added.
+// ─────────────────────────────────────────────
+model OnlinePaymentAttempt {
+  id        String     @id @default(uuid())
+  invoiceId String     @map("invoice_id")
+  invoice   FeeInvoice @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+
+  amount Decimal             @db.Decimal(12, 2)
+  method OnlinePaymentMethod
+  status OnlinePaymentStatus @default(PENDING)
+
+  // Gateway-redirect methods only (CARD, or JAZZCASH/EASYPAISA once run in
+  // real API mode instead of proof-upload mode).
+  gatewayTxnRef   String? @unique @map("gateway_txn_ref") // our own reference sent to the gateway
+  gatewayResponse Json?   @map("gateway_response") // raw callback payload, kept for audit/troubleshooting
+
+  // Proof-upload methods (BANK_TRANSFER / JAZZCASH / EASYPAISA today).
+  proofFileKey String? @map("proof_file_key") // local storage fileKey for the uploaded screenshot/receipt
+  proofNote    String? @map("proof_note") // e.g. "Sent via JazzCash to 0300-XXXXXXX, ref #123"
+
+  initiatedById String? @map("initiated_by_id") // parent/student who started this
+  initiatedBy   User?   @relation("OnlinePaymentInitiatedBy", fields: [initiatedById], references: [id])
+
+  reviewedById String?   @map("reviewed_by_id") // staff who approved/rejected a submitted proof
+  reviewedBy   User?     @relation("OnlinePaymentReviewedBy", fields: [reviewedById], references: [id])
+  reviewNote   String?   @map("review_note")
+  reviewedAt   DateTime? @map("reviewed_at")
+
+  feePaymentId String?     @unique @map("fee_payment_id") // set once approved/confirmed
+  feePayment   FeePayment? @relation(fields: [feePaymentId], references: [id])
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@map("online_payment_attempts")
+}
+
+enum OnlinePaymentMethod {
+  JAZZCASH
+  EASYPAISA
+  BANK_TRANSFER
+  CARD
+}
+
+enum OnlinePaymentStatus {
+  PENDING // created, waiting for the parent to pay/upload proof or the gateway redirect to complete
+  SUBMITTED // proof uploaded, awaiting staff review (proof-upload methods only)
+  APPROVED // staff approved the proof -> converted to a real FeePayment
+  COMPLETED // gateway confirmed success -> converted to a real FeePayment
+  REJECTED // staff rejected the proof (duplicate, unclear, wrong amount, etc.)
+  FAILED // gateway reported failure/cancellation
+}
+
+// ─────────────────────────────────────────────
+// AI FEATURES  (Question Paper Generator + Lesson Plan Generator - closes
+// the "no AI features" gap vs. competitor products. Both store the AI's
+// structured output as JSON so a teacher can review/edit before printing;
+// nothing here auto-publishes anything without a human looking at it first.)
+// ─────────────────────────────────────────────
+model AiQuestionPaper {
+  id       String @id @default(uuid())
+  schoolId String @map("school_id")
+  school   School @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+
+  subjectId String?  @map("subject_id")
+  subject   Subject? @relation(fields: [subjectId], references: [id])
+
+  classId String? @map("class_id")
+  class   Class?  @relation(fields: [classId], references: [id])
+
+  title           String
+  examType        String? // "Class Test", "Midterm", "Final", "Quiz"...
+  totalMarks      Int     @map("total_marks")
+  durationMinutes Int?    @map("duration_minutes")
+  instructions    String?
+
+  // Structured as { sections: [{ title, marks, questions: [{ text, marks,
+  // type, options? }] }] } - see ai-question-paper.service.ts for the exact
+  // shape the model is prompted to return and how it's validated.
+  content Json
+
+  createdById String? @map("created_by_id")
+  createdBy   User?   @relation("AiQuestionPaperCreatedBy", fields: [createdById], references: [id])
+
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime  @updatedAt @map("updated_at")
+  deletedAt DateTime? @map("deleted_at")
+
+  @@map("ai_question_papers")
+}
+
+model AiLessonPlan {
+  id       String @id @default(uuid())
+  schoolId String @map("school_id")
+  school   School @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+
+  subjectId String?  @map("subject_id")
+  subject   Subject? @relation(fields: [subjectId], references: [id])
+
+  classId String? @map("class_id")
+  class   Class?  @relation(fields: [classId], references: [id])
+
+  topic           String
+  durationMinutes Int?   @map("duration_minutes")
+
+  // Structured as { objectives: string[], materials: string[], warmUp,
+  // mainActivities: string[], assessment, homework } - see
+  // ai-lesson-plan.service.ts for the exact shape.
+  content Json
+
+  createdById String? @map("created_by_id")
+  createdBy   User?   @relation("AiLessonPlanCreatedBy", fields: [createdById], references: [id])
+
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime  @updatedAt @map("updated_at")
+  deletedAt DateTime? @map("deleted_at")
+
+  @@map("ai_lesson_plans")
 }
 
 // ═══════════════════════════════════════════════════
@@ -900,6 +1179,8 @@ model Subject {
   timetableSlots TimetableSlot[]
   homework       Homework[]
   onlineClasses  OnlineClass[]
+  aiQuestionPapers AiQuestionPaper[]
+  aiLessonPlans    AiLessonPlan[]
 
   createdAt DateTime  @default(now()) @map("created_at")
   updatedAt DateTime  @updatedAt @map("updated_at")
@@ -1953,4 +2234,444 @@ model SchoolSetting {
   updatedAt DateTime @updatedAt @map("updated_at")
 
   @@map("school_settings")
+}
+
+// ─────────────────────────────────────────────
+// INVENTORY & POINT OF SALE  (closes the "no Inventory/POS module" gap -
+// the school shop/store: uniforms, stationery, books sold to students/staff.
+// Every PURCHASE/SALE/ADJUSTMENT transaction moves quantityOnHand, so stock
+// levels are always derived from the transaction log, never edited directly -
+// see InventoryService for the profit & loss report this makes possible.)
+// ─────────────────────────────────────────────
+model InventoryItem {
+  id       String @id @default(uuid())
+  schoolId String @map("school_id")
+  school   School @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+
+  branchId String? @map("branch_id")
+  branch   Branch? @relation(fields: [branchId], references: [id])
+
+  name     String
+  category String? // "Uniform", "Stationery", "Book", "Other"
+  sku      String? // optional item code/barcode value
+  unit     String  @default("pcs") @map("unit")
+
+  costPrice      Decimal @default(0) @db.Decimal(12, 2) @map("cost_price") // what the school pays per unit
+  sellPrice      Decimal @default(0) @db.Decimal(12, 2) @map("sell_price") // what a student/staff pays per unit
+  quantityOnHand Int     @default(0) @map("quantity_on_hand")
+  reorderLevel   Int?    @map("reorder_level") // low-stock warning threshold
+
+  isActive Boolean @default(true) @map("is_active")
+
+  transactions InventoryTransaction[]
+
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime  @updatedAt @map("updated_at")
+  deletedAt DateTime? @map("deleted_at")
+
+  @@map("inventory_items")
+}
+
+enum InventoryTransactionType {
+  PURCHASE // stock coming in from a supplier - increases quantityOnHand
+  SALE // POS sale to a student/staff member - decreases quantityOnHand
+  ADJUSTMENT // manual correction (stock count, damage, loss) - can go either way
+}
+
+model InventoryTransaction {
+  id     String        @id @default(uuid())
+  itemId String        @map("item_id")
+  item   InventoryItem @relation(fields: [itemId], references: [id], onDelete: Cascade)
+
+  type        InventoryTransactionType
+  quantity    Int // always positive; `type` determines the direction applied to quantityOnHand
+  unitPrice   Decimal @db.Decimal(12, 2) @map("unit_price")
+  totalAmount Decimal @db.Decimal(12, 2) @map("total_amount")
+
+  // Optional - a POS sale can be attributed to the student who bought it
+  // (e.g. uniform purchase billed to their family), purely for record-keeping;
+  // this does NOT create a FeeInvoice/FeePayment.
+  studentId String?         @map("student_id")
+  student   StudentProfile? @relation(fields: [studentId], references: [id])
+
+  note String?
+
+  createdById String? @map("created_by_id")
+  createdBy   User?   @relation("InventoryTransactionCreatedBy", fields: [createdById], references: [id])
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@map("inventory_transactions")
+}
+
+// ─────────────────────────────────────────────
+// ASSETS MANAGEMENT  (closes the "no Assets Management module" gap - the
+// school's fixed assets: furniture, computers, lab equipment, etc. Separate
+// from Vehicle/Driver in the Transport module, which already covers those.)
+// ─────────────────────────────────────────────
+enum AssetCondition {
+  NEW
+  GOOD
+  FAIR
+  POOR
+  DAMAGED
+}
+
+model Asset {
+  id       String @id @default(uuid())
+  schoolId String @map("school_id")
+  school   School @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+
+  branchId String? @map("branch_id")
+  branch   Branch? @relation(fields: [branchId], references: [id])
+
+  name         String
+  category     String? // "Furniture", "Electronics", "Lab Equipment", "Other"
+  assetTag     String? @map("asset_tag") // school's own inventory tag/barcode, if they use one
+  purchaseDate DateTime? @db.Date @map("purchase_date")
+  purchaseCost Decimal?  @db.Decimal(12, 2) @map("purchase_cost")
+  condition    AssetCondition @default(GOOD)
+  location     String? // e.g. "Staff Room", "Computer Lab", "Class 5 - Section A"
+
+  assignedToId String? @map("assigned_to_id") // e.g. a laptop assigned to a specific teacher
+  assignedTo   User?   @relation("AssetAssignedTo", fields: [assignedToId], references: [id])
+
+  warrantyExpiryDate DateTime? @db.Date @map("warranty_expiry_date")
+  notes              String?
+
+  isDisposed Boolean   @default(false) @map("is_disposed") // written off / scrapped / sold, kept for history instead of deleting
+  disposedAt DateTime? @map("disposed_at")
+
+  maintenanceLogs AssetMaintenanceLog[]
+
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime  @updatedAt @map("updated_at")
+  deletedAt DateTime? @map("deleted_at")
+
+  @@map("assets")
+}
+
+model AssetMaintenanceLog {
+  id      String @id @default(uuid())
+  assetId String @map("asset_id")
+  asset   Asset  @relation(fields: [assetId], references: [id], onDelete: Cascade)
+
+  date        DateTime @db.Date
+  description String
+  cost        Decimal? @db.Decimal(12, 2)
+
+  createdById String? @map("created_by_id")
+  createdBy   User?   @relation("AssetMaintenanceCreatedBy", fields: [createdById], references: [id])
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@map("asset_maintenance_logs")
+}
+
+// ─────────────────────────────────────────────
+// MILESTONE 8 — MEETINGS, STAFF TASKS, SUGGESTIONS BOX
+// ─────────────────────────────────────────────
+
+enum MeetingStatus {
+  SCHEDULED
+  COMPLETED
+  CANCELLED
+}
+
+model Meeting {
+  id       String @id @default(uuid())
+  schoolId String @map("school_id")
+  school   School @relation(fields: [schoolId], references: [id])
+  branchId String? @map("branch_id")
+  branch   Branch? @relation(fields: [branchId], references: [id])
+
+  title       String
+  agenda      String?
+  scheduledAt DateTime @map("scheduled_at")
+  location    String?
+  status      MeetingStatus @default(SCHEDULED)
+  minutes     String? // filled in after the meeting happens
+
+  createdById String @map("created_by_id")
+  createdBy   User   @relation("MeetingCreatedBy", fields: [createdById], references: [id])
+
+  attendees MeetingAttendee[]
+
+  deletedAt DateTime? @map("deleted_at")
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime  @updatedAt @map("updated_at")
+
+  @@map("meetings")
+}
+
+model MeetingAttendee {
+  id        String  @id @default(uuid())
+  meetingId String  @map("meeting_id")
+  meeting   Meeting @relation(fields: [meetingId], references: [id], onDelete: Cascade)
+  userId    String  @map("user_id")
+  user      User    @relation("MeetingAttendeeUser", fields: [userId], references: [id], onDelete: Cascade)
+
+  notifiedAt DateTime? @map("notified_at") // set when the in-app notification was sent
+  attended   Boolean?  // null = not marked yet, set after the meeting
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@unique([meetingId, userId])
+  @@map("meeting_attendees")
+}
+
+enum StaffTaskPriority {
+  LOW
+  MEDIUM
+  HIGH
+}
+
+enum StaffTaskStatus {
+  PENDING
+  IN_PROGRESS
+  COMPLETED
+  CANCELLED
+}
+
+model StaffTask {
+  id       String @id @default(uuid())
+  schoolId String @map("school_id")
+  school   School @relation(fields: [schoolId], references: [id])
+  branchId String? @map("branch_id")
+  branch   Branch? @relation(fields: [branchId], references: [id])
+
+  title       String
+  description String?
+  priority    StaffTaskPriority @default(MEDIUM)
+  status      StaffTaskStatus   @default(PENDING)
+  dueDate     DateTime?         @db.Date @map("due_date")
+
+  assignedToId String @map("assigned_to_id")
+  assignedTo   User   @relation("StaffTaskAssignedTo", fields: [assignedToId], references: [id])
+  assignedById String @map("assigned_by_id")
+  assignedBy   User   @relation("StaffTaskAssignedBy", fields: [assignedById], references: [id])
+
+  completedAt DateTime? @map("completed_at")
+
+  deletedAt DateTime? @map("deleted_at")
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime  @updatedAt @map("updated_at")
+
+  @@map("staff_tasks")
+}
+
+enum SuggestionStatus {
+  NEW
+  REVIEWED
+  IN_PROGRESS
+  RESOLVED
+  DISMISSED
+}
+
+model Suggestion {
+  id       String @id @default(uuid())
+  schoolId String @map("school_id")
+  school   School @relation(fields: [schoolId], references: [id])
+  branchId String? @map("branch_id")
+  branch   Branch? @relation(fields: [branchId], references: [id])
+
+  category    String?
+  message     String
+  isAnonymous Boolean @default(true) @map("is_anonymous")
+
+  // Kept for audit/anti-abuse even when isAnonymous - the API layer omits the
+  // submitter's identity from responses shown to management whenever
+  // isAnonymous is true, rather than the DB simply not knowing who it was.
+  submittedById String? @map("submitted_by_id")
+  submittedBy   User?   @relation("SuggestionSubmittedBy", fields: [submittedById], references: [id])
+
+  status        SuggestionStatus @default(NEW)
+  adminResponse String?          @map("admin_response")
+  respondedById String?          @map("responded_by_id")
+  respondedBy   User?            @relation("SuggestionRespondedBy", fields: [respondedById], references: [id])
+  respondedAt   DateTime?        @map("responded_at")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@map("suggestions")
+}
+
+// ─────────────────────────────────────────────
+// MILESTONE 9 — SOPs / OPERATIONAL MANUALS LIBRARY
+// ─────────────────────────────────────────────
+
+enum ManualCategory {
+  ACADEMIC
+  ADMINISTRATION
+  HUMAN_RESOURCE
+  FINANCE
+  HEALTH_SAFETY
+  USER_MANUAL
+  CUSTOM
+}
+
+model ManualDocument {
+  id String @id @default(uuid())
+
+  // null = shipped with the product, visible to every school (the bundled
+  // 50-manual library). Non-null = a school's own custom SOP, only visible
+  // to that school (plus still visible alongside the global ones).
+  schoolId String? @map("school_id")
+  school   School? @relation(fields: [schoolId], references: [id])
+
+  category ManualCategory
+  title    String
+  slug     String? @unique // stable id for the bundled ones, e.g. "lesson-planning-manual" (Postgres allows multiple NULLs, so school-specific CUSTOM manuals without a slug are unaffected)
+  summary  String?
+  content  String // markdown body
+  version  Int     @default(1)
+  isPublished Boolean @default(true) @map("is_published")
+
+  createdById String? @map("created_by_id")
+  createdBy   User?   @relation("ManualCreatedBy", fields: [createdById], references: [id])
+  updatedById String? @map("updated_by_id")
+  updatedBy   User?   @relation("ManualUpdatedBy", fields: [updatedById], references: [id])
+
+  deletedAt DateTime? @map("deleted_at")
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime  @updatedAt @map("updated_at")
+
+  @@index([category])
+  @@map("manual_documents")
+}
+
+// ─────────────────────────────────────────────
+// MILESTONE 10a — REAL-TIME CHAT
+// ─────────────────────────────────────────────
+
+enum ChatThreadType {
+  DIRECT // 1:1 (e.g. Teacher-Parent, Director-Teacher)
+  CLASS_GROUP // a section's parents + class teacher (auto-membership, synced from Section/ParentStudent)
+  BROADCAST // whole-parent/whole-school one-to-many notice board (posting restricted to moderators)
+  STAFF_GROUP // ad-hoc staff group (Director-Teacher, Director-Management-Committee, etc.)
+}
+
+enum ChatMemberRole {
+  MEMBER
+  MODERATOR
+}
+
+model ChatThread {
+  id String @id @default(uuid())
+
+  schoolId String @map("school_id")
+  school   School @relation(fields: [schoolId], references: [id])
+  branchId String? @map("branch_id")
+  branch   Branch? @relation(fields: [branchId], references: [id])
+
+  type  ChatThreadType
+  title String? // null for DIRECT threads - the UI derives a label from the other member
+
+  // Only set for CLASS_GROUP - links back to the Section so membership can
+  // be re-synced (new parent/class-teacher added) whenever the thread is
+  // opened, rather than needing a separate sync job.
+  sectionId String?  @map("section_id")
+  section   Section? @relation(fields: [sectionId], references: [id])
+
+  // BROADCAST threads (e.g. "Whole School Parents Notice Board") are
+  // one-to-many: only MODERATOR members (or manager roles) can post,
+  // everyone else can only read - prevents a school-wide group turning into
+  // an uncontrolled free-for-all.
+  postingRestricted Boolean @default(false) @map("posting_restricted")
+
+  createdById String @map("created_by_id")
+  createdBy   User   @relation("ChatThreadCreatedBy", fields: [createdById], references: [id])
+
+  members  ChatThreadMember[]
+  messages ChatMessage[]
+  calls    ChatCall[]
+
+  deletedAt DateTime? @map("deleted_at")
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime  @updatedAt @map("updated_at")
+
+  @@map("chat_threads")
+}
+
+model ChatThreadMember {
+  id       String     @id @default(uuid())
+  threadId String     @map("thread_id")
+  thread   ChatThread @relation(fields: [threadId], references: [id], onDelete: Cascade)
+  userId   String     @map("user_id")
+  user     User       @relation("ChatThreadMemberUser", fields: [userId], references: [id], onDelete: Cascade)
+
+  role       ChatMemberRole @default(MEMBER)
+  lastReadAt DateTime?      @map("last_read_at")
+
+  joinedAt DateTime @default(now()) @map("joined_at")
+
+  @@unique([threadId, userId])
+  @@map("chat_thread_members")
+}
+
+model ChatMessage {
+  id       String     @id @default(uuid())
+  threadId String     @map("thread_id")
+  thread   ChatThread @relation(fields: [threadId], references: [id], onDelete: Cascade)
+  senderId String     @map("sender_id")
+  sender   User       @relation("ChatMessageSender", fields: [senderId], references: [id])
+
+  body          String
+  attachmentUrl String? @map("attachment_url")
+
+  deletedAt DateTime? @map("deleted_at")
+  createdAt DateTime  @default(now()) @map("created_at")
+
+  @@index([threadId, createdAt])
+  @@map("chat_messages")
+}
+
+// ─────────────────────────────────────────────
+// MILESTONE 10b — VIDEO MEETINGS (LiveKit)
+// ─────────────────────────────────────────────
+
+enum CallStatus {
+  ACTIVE
+  ENDED
+}
+
+// A call is always attached to a ChatThread - reuses that thread's exact
+// membership/permission model (class group, staff group, broadcast, direct)
+// instead of a separate meeting-invite system. `roomName` is stable per
+// thread (LiveKit rooms are ephemeral on their side; this row is only our
+// own bookkeeping for notifications, "ongoing call" banners, and - later -
+// Milestone 10d's AI notetaker transcript/summary).
+model ChatCall {
+  id       String     @id @default(uuid())
+  threadId String     @map("thread_id")
+  thread   ChatThread @relation(fields: [threadId], references: [id], onDelete: Cascade)
+  roomName String     @map("room_name")
+
+  status CallStatus @default(ACTIVE)
+
+  startedById String @map("started_by_id")
+  startedBy   User   @relation("ChatCallStartedBy", fields: [startedById], references: [id])
+  startedAt   DateTime @default(now()) @map("started_at")
+  endedAt     DateTime? @map("ended_at")
+
+  // Populated later by Milestone 10d's AI meeting notetaker.
+  transcript String?
+  summary    String?
+
+  // Milestone 10c - AI fallback call-answering. If nobody else joins this
+  // room within AI_FALLBACK_TIMEOUT_SECONDS, ChatCallService dispatches the
+  // voice-ai-agent (LiveKit Agents worker) into the room and flips this so it
+  // never dispatches a second time for the same call.
+  aiJoined       Boolean   @default(false) @map("ai_joined")
+  aiDispatchedAt DateTime? @map("ai_dispatched_at")
+
+  // Milestone 10d - AI meeting notetaker. Unlike aiJoined above (a fallback
+  // nobody asked for), this is opt-in: whoever starts the call ticks "Enable
+  // AI notetaker" and it joins immediately, silently, alongside them - no
+  // timeout involved. transcript/summary above (added in 10b, unused until
+  // now) are what it fills in.
+  notetakerJoined Boolean @default(false) @map("notetaker_joined")
+
+  @@map("chat_calls")
 }

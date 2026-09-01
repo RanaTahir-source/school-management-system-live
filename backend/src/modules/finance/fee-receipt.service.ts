@@ -5,6 +5,7 @@ import { Injectable, Logger } from '@nestjs/common';
 // A namespace import compiles to a plain `require('pdfkit')` instead, which works.
 import * as PDFDocument from 'pdfkit';
 import * as QRCode from 'qrcode';
+import { fetchPersonPhoto } from '../../common/utils/photo-storage';
 
 // Brand palette — deep Islamic green + gold accent, matching Dar-e-Arqam branding.
 const BRAND_GREEN = '#0B5D3B';
@@ -53,20 +54,12 @@ type PaymentWithRelations = {
 export class FeeReceiptService {
   private readonly logger = new Logger(FeeReceiptService.name);
 
-  // Best-effort fetch of the student's photo as a Buffer. Returns null (never
-  // throws) so a broken/missing photoUrl just falls back to the placeholder —
-  // a receipt should never fail to print because of a photo.
+  // Best-effort fetch of the student's photo as a Buffer (local upload or
+  // remote URL). Returns null (never throws) so a broken/missing photoUrl
+  // just falls back to the placeholder - a receipt should never fail to
+  // print because of a photo.
   private async fetchPhoto(url: string | null | undefined): Promise<Buffer | null> {
-    if (!url) return null;
-    try {
-      const res = await fetch(url);
-      if (!res.ok) return null;
-      const arrayBuffer = await res.arrayBuffer();
-      return Buffer.from(arrayBuffer);
-    } catch (err) {
-      this.logger.warn(`Could not fetch student photo (${url}): ${(err as Error).message}`);
-      return null;
-    }
+    return fetchPersonPhoto(url);
   }
 
   // Draws a rounded placeholder avatar (a simple person silhouette) when no

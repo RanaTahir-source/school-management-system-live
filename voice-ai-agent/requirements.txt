@@ -1,0 +1,10 @@
+# Milestone 10c - AI fallback call-answering worker (LiveKit Agents, Python).
+# Deepgram = STT + TTS (direct plugin, own API key - cheapest + lowest latency
+# per the cost comparison in CLAUDE_PROJECT_MEMORY.md). Anthropic = Claude LLM,
+# same model family used everywhere else in this project. Silero = VAD.
+livekit-agents[anthropic,deepgram,silero]~=1.6
+python-dotenv~=1.0
+# Used directly (not just via the livekit plugin) by notetaker.py for the
+# one-shot "summarize this transcript" call, which doesn't fit the
+# conversational AgentSession/LLM-tool-loop shape receptionist.py uses.
+anthropic~=0.40

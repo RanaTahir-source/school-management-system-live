@@ -46,6 +46,7 @@ export type StudentProfile = {
   id: string;
   admissionNo: string;
   isActive: boolean;
+  photoUrl?: string | null;
   user: { id: string; fullName: string; email: string; isActive: boolean };
   section?: { id: string; name: string; class?: { id: string; name: string } } | null;
 };
@@ -59,6 +60,7 @@ export type TeacherProfile = {
   cnic?: string | null;
   address?: string | null;
   isActive: boolean;
+  photoUrl?: string | null;
   user: { id: string; fullName: string; email: string; isActive: boolean };
 };
 
@@ -852,4 +854,362 @@ export type LeaveRequest = {
   staffUser?: { fullName: string } | null;
   submittedBy?: { fullName: string } | null;
   reviewedBy?: { fullName: string } | null;
+};
+
+// Bulk Excel Import (Students & Teachers) - matches backend
+// common/utils/excel-import.ts BulkImportSummary/BulkImportRowResult shape.
+export type BulkImportRowResult = {
+  row: number;
+  status: 'created' | 'error';
+  identifier?: string;
+  message?: string;
+};
+
+export type BulkImportSummary = {
+  total: number;
+  created: number;
+  failed: number;
+  results: BulkImportRowResult[];
+};
+
+// ── Admissions CRM (enquiries/leads) ───────────────────────────────────
+export type AdmissionSource = 'WALK_IN' | 'PHONE' | 'REFERRAL' | 'SOCIAL_MEDIA' | 'WEBSITE' | 'ADVERTISEMENT' | 'OTHER';
+export type AdmissionStatus = 'NEW' | 'CONTACTED' | 'FOLLOW_UP' | 'TRIAL_SCHEDULED' | 'ADMITTED' | 'REJECTED' | 'LOST';
+
+export type AdmissionFollowUp = {
+  id: string;
+  note: string;
+  nextFollowUpDate: string | null;
+  createdAt: string;
+  createdBy?: { id: string; fullName: string } | null;
+};
+
+export type AdmissionEnquiry = {
+  id: string;
+  schoolId: string;
+  branchId: string | null;
+  childName: string;
+  desiredClassName: string | null;
+  parentName: string;
+  phone: string;
+  email: string | null;
+  address: string | null;
+  source: AdmissionSource;
+  status: AdmissionStatus;
+  notes: string | null;
+  nextFollowUpDate: string | null;
+  submittedOnline: boolean;
+  convertedStudentId: string | null;
+  convertedAt: string | null;
+  createdAt: string;
+  branch?: { id: string; name: string } | null;
+  assignedTo?: { id: string; fullName: string } | null;
+  createdBy?: { id: string; fullName: string } | null;
+  convertedStudent?: { id: string; admissionNo: string } | null;
+  followUps: AdmissionFollowUp[];
+};
+
+export type AdmissionSummary = {
+  total: number;
+  byStatus: { status: AdmissionStatus; count: number }[];
+  bySource: { source: AdmissionSource; count: number }[];
+};
+
+// ── Online Fee Payment ─────────────────────────────────────────────────
+export type OnlinePaymentMethod = 'JAZZCASH' | 'EASYPAISA' | 'BANK_TRANSFER' | 'CARD';
+export type OnlinePaymentStatus = 'PENDING' | 'SUBMITTED' | 'APPROVED' | 'COMPLETED' | 'REJECTED' | 'FAILED';
+
+export type OnlinePaymentAttempt = {
+  id: string;
+  invoiceId: string;
+  amount: string;
+  method: OnlinePaymentMethod;
+  status: OnlinePaymentStatus;
+  proofFileKey: string | null;
+  proofNote: string | null;
+  reviewNote: string | null;
+  createdAt: string;
+  invoice?: { id: string; period: string };
+  initiatedBy?: { id: string; fullName: string };
+  feePayment?: { receiptNo: string } | null;
+};
+
+export type PayToDetails = {
+  bankName: string | null;
+  bankAccountTitle: string | null;
+  bankAccountNumber: string | null;
+  jazzCashNumber: string | null;
+  easyPaisaNumber: string | null;
+};
+
+export type InitiateOnlinePaymentResponse = {
+  attempt: OnlinePaymentAttempt;
+  payTo: PayToDetails;
+};
+
+// ── AI Tools (Question Paper + Lesson Plan generators) ─────────────────
+export type QuestionType = 'MCQ' | 'SHORT' | 'LONG' | 'TRUE_FALSE' | 'FILL_BLANK';
+
+export type AiQuestion = {
+  text: string;
+  marks: number;
+  type: QuestionType;
+  options?: string[];
+};
+
+export type AiQuestionPaperSection = {
+  title: string;
+  marks: number;
+  questions: AiQuestion[];
+};
+
+export type AiQuestionPaperContent = {
+  sections: AiQuestionPaperSection[];
+};
+
+export type AiQuestionPaper = {
+  id: string;
+  title: string;
+  examType: string | null;
+  totalMarks: number;
+  durationMinutes: number | null;
+  instructions: string | null;
+  content: AiQuestionPaperContent;
+  createdAt: string;
+  subject?: { id: string; name: string } | null;
+  class?: { id: string; name: string } | null;
+  createdBy?: { id: string; fullName: string } | null;
+};
+
+export type AiLessonPlanContent = {
+  objectives: string[];
+  materials: string[];
+  warmUp: string;
+  mainActivities: string[];
+  assessment: string;
+  homework: string;
+};
+
+// ── Inventory & POS ─────────────────────────────────────────────────────
+export type InventoryItem = {
+  id: string;
+  schoolId: string;
+  branchId: string | null;
+  name: string;
+  category: string | null;
+  sku: string | null;
+  unit: string;
+  costPrice: string;
+  sellPrice: string;
+  quantityOnHand: number;
+  reorderLevel: number | null;
+  isActive: boolean;
+};
+
+export type InventoryTransactionType = 'PURCHASE' | 'SALE' | 'ADJUSTMENT';
+
+export type InventoryTransaction = {
+  id: string;
+  itemId: string;
+  type: InventoryTransactionType;
+  quantity: number;
+  unitPrice: string;
+  totalAmount: string;
+  note: string | null;
+  createdAt: string;
+  item?: { id: string; name: string; unit: string };
+  student?: { id: string; admissionNo: string; user: { fullName: string } } | null;
+  createdBy?: { id: string; fullName: string };
+};
+
+export type InventoryProfitLossReport = {
+  from: string | null;
+  to: string | null;
+  totalRevenue: number;
+  totalCost: number;
+  totalProfit: number;
+  items: { itemId: string; itemName: string; quantitySold: number; revenue: number; cost: number; profit: number }[];
+};
+
+// ── Assets Management ───────────────────────────────────────────────────
+export type AssetCondition = 'NEW' | 'GOOD' | 'FAIR' | 'POOR' | 'DAMAGED';
+
+export type AssetMaintenanceLog = {
+  id: string;
+  date: string;
+  description: string;
+  cost: string | null;
+  createdAt: string;
+  createdBy?: { id: string; fullName: string };
+};
+
+export type Asset = {
+  id: string;
+  schoolId: string;
+  branchId: string | null;
+  name: string;
+  category: string | null;
+  assetTag: string | null;
+  purchaseDate: string | null;
+  purchaseCost: string | null;
+  condition: AssetCondition;
+  location: string | null;
+  warrantyExpiryDate: string | null;
+  notes: string | null;
+  isDisposed: boolean;
+  branch?: { id: string; name: string } | null;
+  assignedTo?: { id: string; fullName: string } | null;
+  maintenanceLogs: AssetMaintenanceLog[];
+};
+
+export type AiLessonPlan = {
+  id: string;
+  topic: string;
+  durationMinutes: number | null;
+  content: AiLessonPlanContent;
+  createdAt: string;
+  subject?: { id: string; name: string } | null;
+  class?: { id: string; name: string } | null;
+  createdBy?: { id: string; fullName: string } | null;
+};
+
+// ── Meetings, Staff Tasks, Suggestions Box ──────────────────────────────
+export type MeetingStatus = 'SCHEDULED' | 'COMPLETED' | 'CANCELLED';
+
+export type MeetingAttendee = {
+  id: string;
+  userId: string;
+  notifiedAt: string | null;
+  attended: boolean | null;
+  user: { id: string; fullName: string };
+};
+
+export type Meeting = {
+  id: string;
+  schoolId: string;
+  branchId: string | null;
+  title: string;
+  agenda: string | null;
+  scheduledAt: string;
+  location: string | null;
+  status: MeetingStatus;
+  minutes: string | null;
+  branch?: { id: string; name: string } | null;
+  createdBy?: { id: string; fullName: string };
+  attendees: MeetingAttendee[];
+};
+
+export type StaffTaskPriority = 'LOW' | 'MEDIUM' | 'HIGH';
+export type StaffTaskStatus = 'PENDING' | 'IN_PROGRESS' | 'COMPLETED' | 'CANCELLED';
+
+export type StaffTask = {
+  id: string;
+  schoolId: string;
+  branchId: string | null;
+  title: string;
+  description: string | null;
+  priority: StaffTaskPriority;
+  status: StaffTaskStatus;
+  dueDate: string | null;
+  completedAt: string | null;
+  branch?: { id: string; name: string } | null;
+  assignedTo?: { id: string; fullName: string };
+  assignedBy?: { id: string; fullName: string };
+};
+
+export type SuggestionStatus = 'NEW' | 'REVIEWED' | 'IN_PROGRESS' | 'RESOLVED' | 'DISMISSED';
+
+export type Suggestion = {
+  id: string;
+  schoolId: string;
+  branchId: string | null;
+  category: string | null;
+  message: string;
+  isAnonymous: boolean;
+  status: SuggestionStatus;
+  adminResponse: string | null;
+  respondedAt: string | null;
+  createdAt: string;
+  branch?: { id: string; name: string } | null;
+  submittedBy?: { id: string; fullName: string } | null;
+  respondedBy?: { id: string; fullName: string } | null;
+};
+
+// ── Manuals / SOPs Library ───────────────────────────────────────────────
+export type ManualCategory = 'ACADEMIC' | 'ADMINISTRATION' | 'HUMAN_RESOURCE' | 'FINANCE' | 'HEALTH_SAFETY' | 'USER_MANUAL' | 'CUSTOM';
+
+export type ManualDocument = {
+  id: string;
+  schoolId: string | null;
+  category: ManualCategory;
+  title: string;
+  slug: string | null;
+  summary: string | null;
+  content: string;
+  version: number;
+  isPublished: boolean;
+  createdAt: string;
+  updatedAt: string;
+  createdBy?: { id: string; fullName: string } | null;
+  updatedBy?: { id: string; fullName: string } | null;
+};
+
+// ── Chat ──────────────────────────────────────────────────────────────────
+export type ChatThreadType = 'DIRECT' | 'CLASS_GROUP' | 'BROADCAST' | 'STAFF_GROUP';
+export type ChatMemberRole = 'MEMBER' | 'MODERATOR';
+
+export type ChatThreadMember = {
+  id: string;
+  userId: string;
+  role: ChatMemberRole;
+  lastReadAt: string | null;
+  joinedAt: string;
+  user: { id: string; fullName: string };
+};
+
+export type ChatMessage = {
+  id: string;
+  threadId: string;
+  senderId: string;
+  body: string;
+  attachmentUrl: string | null;
+  createdAt: string;
+  sender: { id: string; fullName: string };
+};
+
+export type ChatCallStatus = {
+  id: string;
+  threadId: string;
+  roomName: string;
+  status: 'ACTIVE' | 'ENDED';
+  startedAt: string;
+  startedBy: { id: string; fullName: string };
+  notetakerJoined: boolean;
+} | null;
+
+export type JoinCallResponse = {
+  token: string;
+  url: string;
+  roomName: string;
+  callId: string;
+  canPublish: boolean;
+};
+
+export type ChatThread = {
+  id: string;
+  schoolId: string;
+  branchId: string | null;
+  type: ChatThreadType;
+  title: string | null;
+  sectionId: string | null;
+  postingRestricted: boolean;
+  createdAt: string;
+  updatedAt: string;
+  branch?: { id: string; name: string } | null;
+  section?: { id: string; name: string; class: { id: string; name: string } } | null;
+  createdBy?: { id: string; fullName: string };
+  members: ChatThreadMember[];
+  myRole?: ChatMemberRole;
+  lastMessage?: ChatMessage | null;
+  unreadCount?: number;
 };

@@ -1,6 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import { api, ApiError } from './api';
 import { tokenStorage, StoredUser } from './storage';
+import { disconnectChatSocket } from './socket';
 
 type LoginResponse = {
   user: {
@@ -73,6 +74,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       api.post('/auth/logout', { refreshToken }).catch(() => {});
     }
     tokenStorage.clear();
+    disconnectChatSocket();
     setUser(null);
   }, []);
 

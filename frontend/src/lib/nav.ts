@@ -20,6 +20,13 @@ import {
   CalendarClock,
   ShieldCheck,
   Crown,
+  UserPlus,
+  Sparkles,
+  Boxes,
+  CalendarCheck,
+  Lightbulb,
+  BookOpen,
+  MessageCircle,
 } from 'lucide-react';
 import type { Role } from '@/types';
 
@@ -62,6 +69,12 @@ export const NAV_ITEMS: NavItem[] = [
     roles: ['DIRECTOR', 'ADMIN', 'PRINCIPAL', 'COORDINATOR', 'TEACHER'],
   },
   {
+    label: 'Admissions',
+    to: '/admissions',
+    icon: UserPlus,
+    roles: ['DIRECTOR', 'ADMIN', 'PRINCIPAL', 'RECEPTIONIST'],
+  },
+  {
     label: 'Teachers',
     to: '/teachers',
     icon: UsersRound,
@@ -78,6 +91,12 @@ export const NAV_ITEMS: NavItem[] = [
     to: '/finance',
     icon: Wallet,
     roles: ['DIRECTOR', 'ADMIN', 'ACCOUNTANT', 'PRINCIPAL'],
+  },
+  {
+    label: 'AI Tools',
+    to: '/ai-tools',
+    icon: Sparkles,
+    roles: ['DIRECTOR', 'ADMIN', 'PRINCIPAL', 'COORDINATOR', 'TEACHER'],
   },
   {
     label: 'Exams & Results',
@@ -116,6 +135,12 @@ export const NAV_ITEMS: NavItem[] = [
     roles: ['DIRECTOR', 'ADMIN', 'PRINCIPAL', 'ACCOUNTANT', 'STUDENT'],
   },
   {
+    label: 'Inventory & Assets',
+    to: '/inventory',
+    icon: Boxes,
+    roles: ['DIRECTOR', 'ADMIN', 'PRINCIPAL', 'ACCOUNTANT'],
+  },
+  {
     label: 'Payroll',
     to: '/payroll',
     icon: Banknote,
@@ -143,6 +168,30 @@ export const NAV_ITEMS: NavItem[] = [
     label: 'Schedule',
     to: '/schedule',
     icon: CalendarClock,
+    roles: ['DIRECTOR', 'ADMIN', 'PRINCIPAL', 'COORDINATOR', 'ACCOUNTANT', 'TEACHER', 'STUDENT', 'PARENT', 'LIBRARIAN', 'RECEPTIONIST'],
+  },
+  {
+    label: 'Chat',
+    to: '/chat',
+    icon: MessageCircle,
+    roles: ['DIRECTOR', 'ADMIN', 'PRINCIPAL', 'COORDINATOR', 'ACCOUNTANT', 'TEACHER', 'STUDENT', 'PARENT', 'LIBRARIAN', 'RECEPTIONIST'],
+  },
+  {
+    label: 'Meetings & Tasks',
+    to: '/meetings-tasks',
+    icon: CalendarCheck,
+    roles: ['DIRECTOR', 'ADMIN', 'PRINCIPAL', 'COORDINATOR', 'ACCOUNTANT', 'TEACHER', 'STUDENT', 'PARENT', 'LIBRARIAN', 'RECEPTIONIST'],
+  },
+  {
+    label: 'Suggestions Box',
+    to: '/suggestions',
+    icon: Lightbulb,
+    roles: ['DIRECTOR', 'ADMIN', 'PRINCIPAL', 'COORDINATOR', 'ACCOUNTANT', 'TEACHER', 'STUDENT', 'PARENT', 'LIBRARIAN', 'RECEPTIONIST'],
+  },
+  {
+    label: 'Manuals & SOPs',
+    to: '/manuals',
+    icon: BookOpen,
     roles: ['DIRECTOR', 'ADMIN', 'PRINCIPAL', 'COORDINATOR', 'ACCOUNTANT', 'TEACHER', 'STUDENT', 'PARENT', 'LIBRARIAN', 'RECEPTIONIST'],
   },
   {

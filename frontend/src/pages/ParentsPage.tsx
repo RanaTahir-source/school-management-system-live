@@ -1,8 +1,9 @@
 import { FormEvent, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Baby, Link2, Plus, ReceiptText, Trash2, Users } from 'lucide-react';
+import { Baby, CreditCard, Link2, Plus, ReceiptText, Trash2, Users } from 'lucide-react';
 import { api, ApiError } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
+import { PayOnlineDialog } from '@/components/PayOnlineDialog';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -153,6 +154,7 @@ export default function ParentsPage() {
     enabled: isParent,
   });
   const [selectedChildId, setSelectedChildId] = useState<string | null>(null);
+  const [payTarget, setPayTarget] = useState<FeeInvoice | null>(null);
 
   const attendanceQuery = useQuery({
     queryKey: ['parent-portal', 'attendance', selectedChildId],
@@ -362,9 +364,17 @@ export default function ParentsPage() {
                         feesQuery.data.map((inv) => (
                           <div key={inv.id} className="flex items-center justify-between text-sm">
                             <span className="text-muted-foreground">{inv.period}</span>
-                            <Badge variant={inv.status === 'PAID' ? 'success' : inv.status === 'PARTIAL' ? 'warning' : 'destructive'}>
-                              {inv.status}
-                            </Badge>
+                            <div className="flex items-center gap-2">
+                              <Badge variant={inv.status === 'PAID' ? 'success' : inv.status === 'PARTIAL' ? 'warning' : 'destructive'}>
+                                {inv.status}
+                              </Badge>
+                              {inv.status !== 'PAID' && (
+                                <Button variant="outline" size="sm" onClick={() => setPayTarget(inv)}>
+                                  <CreditCard className="h-3.5 w-3.5" />
+                                  Pay Online
+                                </Button>
+                              )}
+                            </div>
                           </div>
                         ))
                       )}
@@ -481,6 +491,15 @@ export default function ParentsPage() {
           </form>
         </DialogContent>
       </Dialog>
+
+      {payTarget && (
+        <PayOnlineDialog
+          invoice={payTarget}
+          open={!!payTarget}
+          onOpenChange={(open) => !open && setPayTarget(null)}
+          onSubmitted={() => queryClient.invalidateQueries({ queryKey: ['parent-portal', 'fees'] })}
+        />
+      )}
     </div>
   );
 }

@@ -1,8 +1,10 @@
 import { FormEvent, useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { GraduationCap, Plus, Search, UserX } from 'lucide-react';
+import { GraduationCap, Plus, Printer, Search, Upload, UserX } from 'lucide-react';
 import { api, ApiError } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
+import { BulkImportDialog } from '@/components/BulkImportDialog';
+import { IdCardBatchDialog, IdCardButton, PhotoUploadButton } from '@/components/IdCardActions';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -72,6 +74,8 @@ export default function StudentsPage() {
 
   const [search, setSearch] = useState('');
   const [createOpen, setCreateOpen] = useState(false);
+  const [bulkImportOpen, setBulkImportOpen] = useState(false);
+  const [idCardBatchOpen, setIdCardBatchOpen] = useState(false);
   const [form, setForm] = useState<FormState>(EMPTY_FORM);
   const [formError, setFormError] = useState<string | null>(null);
   const [deactivateTarget, setDeactivateTarget] = useState<StudentProfile | null>(null);
@@ -187,10 +191,20 @@ export default function StudentsPage() {
           </p>
         </div>
         {canManage && (
-          <Button onClick={openCreate}>
-            <Plus className="h-4 w-4" />
-            Add Student
-          </Button>
+          <div className="flex gap-2">
+            <Button variant="outline" onClick={() => setIdCardBatchOpen(true)}>
+              <Printer className="h-4 w-4" />
+              Print ID Cards
+            </Button>
+            <Button variant="outline" onClick={() => setBulkImportOpen(true)}>
+              <Upload className="h-4 w-4" />
+              Bulk Import
+            </Button>
+            <Button onClick={openCreate}>
+              <Plus className="h-4 w-4" />
+              Add Student
+            </Button>
+          </div>
         )}
       </div>
 
@@ -233,7 +247,7 @@ export default function StudentsPage() {
                   <TableHead>Class / Section</TableHead>
                   <TableHead>Email</TableHead>
                   <TableHead>Status</TableHead>
-                  {canDeactivate && <TableHead className="text-right">Actions</TableHead>}
+                  {canManage && <TableHead className="text-right">Actions</TableHead>}
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -257,19 +271,27 @@ export default function StudentsPage() {
                         {s.isActive ? 'Active' : 'Inactive'}
                       </Badge>
                     </TableCell>
-                    {canDeactivate && (
+                    {canManage && (
                       <TableCell className="text-right">
-                        {s.isActive && (
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            className="text-destructive hover:bg-destructive/10 hover:text-destructive"
-                            onClick={() => setDeactivateTarget(s)}
-                          >
-                            <UserX className="h-4 w-4" />
-                            Deactivate
-                          </Button>
-                        )}
+                        <div className="flex items-center justify-end gap-1">
+                          <IdCardButton kind="students" id={s.id} />
+                          <PhotoUploadButton
+                            kind="students"
+                            id={s.id}
+                            onUploaded={() => queryClient.invalidateQueries({ queryKey: ['students'] })}
+                          />
+                          {canDeactivate && s.isActive && (
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="text-destructive hover:bg-destructive/10 hover:text-destructive"
+                              onClick={() => setDeactivateTarget(s)}
+                            >
+                              <UserX className="h-4 w-4" />
+                              Deactivate
+                            </Button>
+                          )}
+                        </div>
                       </TableCell>
                     )}
                   </TableRow>
@@ -460,6 +482,15 @@ export default function StudentsPage() {
         loading={deactivateMutation.isPending}
         onConfirm={() => deactivateTarget && deactivateMutation.mutate(deactivateTarget.id)}
       />
+
+      <BulkImportDialog
+        kind="students"
+        open={bulkImportOpen}
+        onOpenChange={setBulkImportOpen}
+        onImported={() => queryClient.invalidateQueries({ queryKey: ['students'] })}
+      />
+
+      <IdCardBatchDialog kind="students" open={idCardBatchOpen} onOpenChange={setIdCardBatchOpen} />
     </div>
   );
 }

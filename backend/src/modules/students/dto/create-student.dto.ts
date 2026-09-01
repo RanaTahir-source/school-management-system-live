@@ -63,4 +63,11 @@ export class CreateStudentDto {
   @IsOptional()
   @IsUUID()
   sectionId?: string;
+
+  // Set when this student is being admitted from an Admissions CRM lead
+  // (see AdmissionsService.convertToStudent) - links the enquiry's follow-up
+  // history to the resulting StudentProfile and marks the lead ADMITTED.
+  @IsOptional()
+  @IsUUID()
+  enquiryId?: string;
 }

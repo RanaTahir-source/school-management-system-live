@@ -2,6 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 // pdfkit ships a plain CommonJS export; this project's tsconfig doesn't set
 // esModuleInterop, so a namespace import is required (see fee-receipt.service.ts).
 import * as PDFDocument from 'pdfkit';
+import { fetchPersonPhoto } from '../../common/utils/photo-storage';
 
 const BRAND_GREEN = '#0B5D3B';
 const BRAND_GREEN_DARK = '#083E28';
@@ -46,15 +47,7 @@ export class ResultCardPdfService {
   private readonly logger = new Logger(ResultCardPdfService.name);
 
   private async fetchPhoto(url: string | null | undefined): Promise<Buffer | null> {
-    if (!url) return null;
-    try {
-      const res = await fetch(url);
-      if (!res.ok) return null;
-      return Buffer.from(await res.arrayBuffer());
-    } catch (err) {
-      this.logger.warn(`Could not fetch student photo (${url}): ${(err as Error).message}`);
-      return null;
-    }
+    return fetchPersonPhoto(url);
   }
 
   private drawPlaceholderAvatar(doc: PDFKit.PDFDocument, x: number, y: number, size: number) {

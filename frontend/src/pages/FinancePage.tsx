@@ -28,6 +28,7 @@ import {
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from '@/components/ui/select';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
 import FeeManagementTab from '@/components/finance/FeeManagementTab';
+import OnlinePaymentsReviewTab from '@/components/finance/OnlinePaymentsReviewTab';
 import { formatCurrency, formatDate } from '@/lib/utils';
 import type { School, IncomeRecord, ExpenseRecord } from '@/types';
 
@@ -270,6 +271,7 @@ export default function FinancePage() {
           <TabsTrigger value="expenses">Expenses</TabsTrigger>
           <TabsTrigger value="report">Report</TabsTrigger>
           <TabsTrigger value="fees">Student Fees</TabsTrigger>
+          <TabsTrigger value="online-payments">Online Payments</TabsTrigger>
         </TabsList>
 
         <TabsContent value="income">
@@ -573,6 +575,10 @@ export default function FinancePage() {
 
         <TabsContent value="fees">
           <FeeManagementTab effectiveSchoolId={reportSchoolId} />
+        </TabsContent>
+
+        <TabsContent value="online-payments">
+          <OnlinePaymentsReviewTab effectiveSchoolId={reportSchoolId} />
         </TabsContent>
       </Tabs>
 

@@ -5,6 +5,14 @@ import LoginPage from '@/pages/LoginPage';
 import ForgotPasswordPage from '@/pages/ForgotPasswordPage';
 import DashboardPage from '@/pages/DashboardPage';
 import StudentsPage from '@/pages/StudentsPage';
+import AdmissionsPage from '@/pages/AdmissionsPage';
+import PublicEnquiryPage from '@/pages/PublicEnquiryPage';
+import AiToolsPage from '@/pages/AiToolsPage';
+import InventoryPage from '@/pages/InventoryPage';
+import MeetingsTasksPage from '@/pages/MeetingsTasksPage';
+import SuggestionsPage from '@/pages/SuggestionsPage';
+import ManualsPage from '@/pages/ManualsPage';
+import ChatPage from '@/pages/ChatPage';
 import TeachersPage from '@/pages/TeachersPage';
 import SchoolsPage from '@/pages/SchoolsPage';
 import AcademicsPage from '@/pages/AcademicsPage';
@@ -30,6 +38,7 @@ export default function App() {
     <Routes>
       <Route path="/login" element={<LoginPage />} />
       <Route path="/forgot-password" element={<ForgotPasswordPage />} />
+      <Route path="/apply" element={<PublicEnquiryPage />} />
 
       <Route element={<ProtectedRoute />}>
         <Route element={<AppShell />}>
@@ -37,6 +46,8 @@ export default function App() {
           <Route path="/schools" element={<SchoolsPage />} />
           <Route path="/academics" element={<AcademicsPage />} />
           <Route path="/students" element={<StudentsPage />} />
+          <Route path="/admissions" element={<AdmissionsPage />} />
+          <Route path="/ai-tools" element={<AiToolsPage />} />
           <Route path="/teachers" element={<TeachersPage />} />
           <Route path="/attendance" element={<AttendancePage />} />
           <Route path="/finance" element={<FinancePage />} />
@@ -47,6 +58,11 @@ export default function App() {
           <Route path="/transport" element={<TransportPage />} />
           <Route path="/hostel" element={<HostelPage />} />
           <Route path="/payroll" element={<PayrollPage />} />
+          <Route path="/inventory" element={<InventoryPage />} />
+          <Route path="/meetings-tasks" element={<MeetingsTasksPage />} />
+          <Route path="/suggestions" element={<SuggestionsPage />} />
+          <Route path="/manuals" element={<ManualsPage />} />
+          <Route path="/chat" element={<ChatPage />} />
           <Route path="/parents" element={<ParentsPage />} />
           <Route path="/users" element={<StaffUsersPage />} />
           <Route path="/documents" element={<DocumentsPage />} />

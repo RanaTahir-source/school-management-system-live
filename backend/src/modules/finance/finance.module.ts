@@ -49,5 +49,6 @@ import { FeeExtraReportService } from './fee-extra-report.service';
     FeeSummaryReportService,
     FeeExtraReportService,
   ],
+  exports: [FeePaymentService],
 })
 export class FinanceModule {}
