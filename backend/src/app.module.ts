@@ -42,6 +42,8 @@ import { StaffTasksModule } from './modules/staff-tasks/staff-tasks.module';
 import { SuggestionsModule } from './modules/suggestions/suggestions.module';
 import { ManualsModule } from './modules/manuals/manuals.module';
 import { ChatModule } from './modules/chat/chat.module';
+import { DepartmentsModule } from './modules/departments/departments.module';
+import { QuizzesModule } from './modules/quizzes/quizzes.module';
 
 @Module({
   imports: [
@@ -87,6 +89,8 @@ import { ChatModule } from './modules/chat/chat.module';
     SuggestionsModule,
     ManualsModule,
     ChatModule,
+    DepartmentsModule,
+    QuizzesModule,
     PlatformModule,
   ],
 })

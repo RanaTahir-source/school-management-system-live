@@ -16,6 +16,8 @@ import ChatPage from '@/pages/ChatPage';
 import TeachersPage from '@/pages/TeachersPage';
 import SchoolsPage from '@/pages/SchoolsPage';
 import AcademicsPage from '@/pages/AcademicsPage';
+import DepartmentsPage from '@/pages/DepartmentsPage';
+import QuizzesPage from '@/pages/QuizzesPage';
 import AttendancePage from '@/pages/AttendancePage';
 import FinancePage from '@/pages/FinancePage';
 import ExamsPage from '@/pages/ExamsPage';
@@ -45,6 +47,8 @@ export default function App() {
           <Route path="/" element={<DashboardPage />} />
           <Route path="/schools" element={<SchoolsPage />} />
           <Route path="/academics" element={<AcademicsPage />} />
+          <Route path="/departments" element={<DepartmentsPage />} />
+          <Route path="/quizzes" element={<QuizzesPage />} />
           <Route path="/students" element={<StudentsPage />} />
           <Route path="/admissions" element={<AdmissionsPage />} />
           <Route path="/ai-tools" element={<AiToolsPage />} />

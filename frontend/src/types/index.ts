@@ -106,6 +106,119 @@ export type AcademicYear = {
   school?: { id: string; name: string; code: string };
 };
 
+export type Department = {
+  id: string;
+  schoolId: string;
+  name: string;
+  description: string | null;
+  headOfDepartmentId: string | null;
+  headOfDepartment?: { id: string; fullName: string } | null;
+  isActive: boolean;
+  designations?: Designation[];
+  _count?: { designations: number; staff: number };
+};
+
+export type Designation = {
+  id: string;
+  schoolId: string;
+  departmentId: string | null;
+  department?: { id: string; name: string } | null;
+  name: string;
+  isActive: boolean;
+  _count?: { staff: number };
+};
+
+export type QuizQuestionType = 'MCQ' | 'TRUE_FALSE';
+
+export type QuizQuestion = {
+  id: string;
+  order: number;
+  type: QuizQuestionType;
+  text: string;
+  options: string[] | null;
+  correctAnswer: string;
+  marks: number;
+};
+
+export type Quiz = {
+  id: string;
+  schoolId: string;
+  subjectId: string | null;
+  classId: string | null;
+  sectionId: string | null;
+  title: string;
+  description: string | null;
+  timeLimitMinutes: number | null;
+  isPublished: boolean;
+  createdById: string;
+  subject?: { id: string; name: string } | null;
+  class?: { id: string; name: string } | null;
+  section?: { id: string; name: string } | null;
+  createdBy?: { id: string; fullName: string };
+  questions?: QuizQuestion[];
+  _count?: { questions: number; attempts: number };
+};
+
+export type QuizAttemptRosterEntry = {
+  id: string;
+  status: 'IN_PROGRESS' | 'SUBMITTED';
+  startedAt: string;
+  submittedAt: string | null;
+  score: number | null;
+  totalMarks: number | null;
+  student: { id: string; admissionNo: string; user: { fullName: string } };
+};
+
+export type AvailableQuiz = {
+  id: string;
+  title: string;
+  description: string | null;
+  subject?: { id: string; name: string } | null;
+  timeLimitMinutes: number | null;
+  questionCount: number;
+  myAttempt: { status: 'IN_PROGRESS' | 'SUBMITTED'; score: number | null; totalMarks: number | null } | null;
+};
+
+export type QuizTakeQuestion = {
+  id: string;
+  order: number;
+  type: QuizQuestionType;
+  text: string;
+  options: string[] | null;
+  marks: number;
+};
+
+export type QuizAttemptStart = {
+  attemptId: string;
+  startedAt: string;
+  quiz: {
+    id: string;
+    title: string;
+    description: string | null;
+    timeLimitMinutes: number | null;
+    questions: QuizTakeQuestion[];
+  };
+};
+
+export type QuizResultQuestion = {
+  id: string;
+  text: string;
+  options: string[] | null;
+  marks: number;
+  yourAnswer: string | null;
+  isCorrect?: boolean;
+  correctAnswer?: string;
+};
+
+export type QuizResult = {
+  status: 'IN_PROGRESS' | 'SUBMITTED';
+  score: number | null;
+  totalMarks: number | null;
+  submittedAt: string | null;
+  quizTitle: string;
+  questions: QuizResultQuestion[];
+};
+
 export type SectionRecord = {
   id: string;
   name: string;

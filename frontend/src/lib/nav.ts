@@ -27,6 +27,8 @@ import {
   Lightbulb,
   BookOpen,
   MessageCircle,
+  Briefcase,
+  ClipboardList,
 } from 'lucide-react';
 import type { Role } from '@/types';
 
@@ -107,6 +109,12 @@ export const NAV_GROUPS: NavGroup[] = [
         label: 'Exams & Results',
         to: '/exams',
         icon: BookOpenCheck,
+        roles: ['DIRECTOR', 'ADMIN', 'PRINCIPAL', 'COORDINATOR', 'TEACHER', 'STUDENT'],
+      },
+      {
+        label: 'Quizzes',
+        to: '/quizzes',
+        icon: ClipboardList,
         roles: ['DIRECTOR', 'ADMIN', 'PRINCIPAL', 'COORDINATOR', 'TEACHER', 'STUDENT'],
       },
     ],
@@ -195,6 +203,12 @@ export const NAV_GROUPS: NavGroup[] = [
         to: '/users',
         icon: UserCog,
         roles: ['DIRECTOR', 'ADMIN', 'PRINCIPAL'],
+      },
+      {
+        label: 'Departments',
+        to: '/departments',
+        icon: Briefcase,
+        roles: ['DIRECTOR', 'ADMIN', 'PRINCIPAL', 'COORDINATOR', 'ACCOUNTANT', 'TEACHER'],
       },
       {
         label: 'Reports',

@@ -82,6 +82,9 @@ model School {
   suggestions      Suggestion[]
   manuals          ManualDocument[]
   chatThreads      ChatThread[]
+  departments      Department[]
+  designations     Designation[]
+  quizzes          Quiz[]
 
   createdAt DateTime  @default(now()) @map("created_at")
   updatedAt DateTime  @updatedAt @map("updated_at")
@@ -230,6 +233,8 @@ model User {
   chatThreadMemberships        ChatThreadMember[] @relation("ChatThreadMemberUser")
   chatMessagesSent             ChatMessage[] @relation("ChatMessageSender")
   chatCallsStarted             ChatCall[] @relation("ChatCallStartedBy")
+  departmentsHeaded            Department[] @relation("DepartmentHead")
+  quizzesCreated                Quiz[] @relation("QuizCreatedBy")
 
   createdAt    DateTime  @default(now()) @map("created_at")
   updatedAt    DateTime  @updatedAt @map("updated_at")
@@ -413,6 +418,7 @@ model Class {
   studyMaterials StudyMaterial[]
   aiQuestionPapers AiQuestionPaper[]
   aiLessonPlans    AiLessonPlan[]
+  quizzes          Quiz[]
 
   createdAt DateTime  @default(now()) @map("created_at")
   updatedAt DateTime  @updatedAt @map("updated_at")
@@ -447,6 +453,7 @@ model Section {
   homework       Homework[]
   onlineClasses  OnlineClass[]
   chatThreads    ChatThread[]
+  quizzes        Quiz[]
 
   createdAt DateTime  @default(now()) @map("created_at")
   updatedAt DateTime  @updatedAt @map("updated_at")
@@ -507,6 +514,7 @@ model StudentProfile {
   leaveRequests     LeaveRequest[]
   sourceEnquiry     AdmissionEnquiry? // the CRM lead this student was converted from, if any
   inventoryTransactions InventoryTransaction[]
+  quizAttempts      QuizAttempt[]
 
   isActive  Boolean   @default(true) @map("is_active")
 
@@ -701,7 +709,17 @@ model StaffProfile {
   // constraint below (Postgres treats NULL <> NULL).
   employeeId String? @map("employee_id")
   category      String? // e.g. "TEACHER", "ACCOUNTANT", "PEON" — free text from old CATEGORY field
-  designation   String? @map("designation") // old INCHAR_SUB (subject/role in charge of)
+  designation   String? @map("designation") // old INCHAR_SUB (subject/role in charge of) — kept for backward compatibility with imported records; see departmentId/designationId below for the new structured lookup
+
+  // Structured Department/Designation lookup (Milestone 11), additive on top
+  // of the free-text category/designation fields above — those are left
+  // untouched so existing FoxPro-imported records keep working. A school can
+  // optionally assign staff to one of its own defined departments/designations.
+  departmentId   String?      @map("department_id")
+  departmentRef  Department?  @relation(fields: [departmentId], references: [id], onDelete: SetNull)
+  designationId  String?      @map("designation_id")
+  designationRef Designation? @relation(fields: [designationId], references: [id], onDelete: SetNull)
+
   education     String?
   cnic          String?
   address       String?
@@ -1181,6 +1199,7 @@ model Subject {
   onlineClasses  OnlineClass[]
   aiQuestionPapers AiQuestionPaper[]
   aiLessonPlans    AiLessonPlan[]
+  quizzes          Quiz[]
 
   createdAt DateTime  @default(now()) @map("created_at")
   updatedAt DateTime  @updatedAt @map("updated_at")
@@ -2674,4 +2693,193 @@ model ChatCall {
   notetakerJoined Boolean @default(false) @map("notetaker_joined")
 
   @@map("chat_calls")
+}
+
+// ─────────────────────────────────────────────
+// MILESTONE 11 — DEPARTMENTS & DESIGNATIONS
+// ─────────────────────────────────────────────
+
+// A structured, per-school list of departments (e.g. "Primary Section",
+// "Accounts", "Administration") — School Mentor feature #19. This is
+// additive: StaffProfile's old free-text `category`/`designation` fields
+// (imported from the old FoxPro system) are left untouched; a school can
+// optionally start assigning staff to one of these structured records
+// instead going forward.
+model Department {
+  id       String @id @default(uuid())
+  schoolId String @map("school_id")
+  school   School @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+
+  name        String
+  description String?
+
+  headOfDepartmentId String? @map("head_of_department_id")
+  headOfDepartment   User?   @relation("DepartmentHead", fields: [headOfDepartmentId], references: [id])
+
+  designations Designation[]
+  staff        StaffProfile[]
+
+  isActive Boolean @default(true) @map("is_active")
+
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime  @updatedAt @map("updated_at")
+  deletedAt DateTime? @map("deleted_at")
+
+  @@unique([schoolId, name])
+  @@map("departments")
+}
+
+// A structured, per-school list of job titles (e.g. "Senior Teacher",
+// "Accounts Officer", "Peon"), optionally grouped under a Department.
+model Designation {
+  id       String @id @default(uuid())
+  schoolId String @map("school_id")
+  school   School @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+
+  departmentId String?     @map("department_id")
+  department   Department? @relation(fields: [departmentId], references: [id], onDelete: SetNull)
+
+  name String
+
+  staff StaffProfile[]
+
+  isActive Boolean @default(true) @map("is_active")
+
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime  @updatedAt @map("updated_at")
+  deletedAt DateTime? @map("deleted_at")
+
+  @@unique([schoolId, name])
+  @@map("designations")
+}
+
+// ─────────────────────────────────────────────
+// MILESTONE 12 — ONLINE QUIZ BUILDER
+// ─────────────────────────────────────────────
+// School Mentor feature #65 "Online Quiz Builder" - distinct from the
+// existing AI Question Paper Generator (ai/ module), which produces a
+// printable exam paper. This is an interactive, in-app quiz a teacher
+// assigns to a class/section and students actually take and submit online,
+// with MCQ/True-False auto-graded immediately on submit.
+
+enum QuizQuestionType {
+  MCQ
+  TRUE_FALSE
+}
+
+enum QuizAttemptStatus {
+  IN_PROGRESS
+  SUBMITTED
+}
+
+model Quiz {
+  id       String @id @default(uuid())
+  schoolId String @map("school_id")
+  school   School @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+
+  // Same optional subject/class scoping pattern as AiQuestionPaper/AiLessonPlan,
+  // plus an optional sectionId since a quiz is actually assigned to a specific
+  // section's students to take (a class alone isn't specific enough to know
+  // who should see it in "Available Quizzes").
+  subjectId String?  @map("subject_id")
+  subject   Subject? @relation(fields: [subjectId], references: [id])
+
+  classId String? @map("class_id")
+  class   Class?  @relation(fields: [classId], references: [id])
+
+  sectionId String?  @map("section_id")
+  section   Section? @relation(fields: [sectionId], references: [id])
+
+  title            String
+  description      String?
+  timeLimitMinutes Int?    @map("time_limit_minutes")
+
+  // A quiz can only be edited (questions changed) while unpublished. Once
+  // published, students can start attempts against it - QuizzesService
+  // blocks further question edits at that point so an in-progress attempt's
+  // questions never shift under a student mid-quiz.
+  isPublished Boolean @default(false) @map("is_published")
+
+  createdById String @map("created_by_id")
+  createdBy   User   @relation("QuizCreatedBy", fields: [createdById], references: [id])
+
+  questions QuizQuestion[]
+  attempts  QuizAttempt[]
+
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime  @updatedAt @map("updated_at")
+  deletedAt DateTime? @map("deleted_at")
+
+  @@map("quizzes")
+}
+
+model QuizQuestion {
+  id     String @id @default(uuid())
+  quizId String @map("quiz_id")
+  quiz   Quiz   @relation(fields: [quizId], references: [id], onDelete: Cascade)
+
+  order Int              @default(0)
+  type  QuizQuestionType @default(MCQ)
+  text  String
+
+  // MCQ/TRUE_FALSE choices, e.g. ["Lahore", "Karachi", "Islamabad", "Quetta"]
+  // - TRUE_FALSE questions just store ["True", "False"].
+  options Json?
+
+  // The correct choice's index into `options`, stored as a string (e.g.
+  // "2") - kept as a string rather than Int so QuizAnswer.responseText can
+  // be compared with a simple string equality check regardless of type.
+  correctAnswer String @map("correct_answer")
+  marks         Int    @default(1)
+
+  answers QuizAnswer[]
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@map("quiz_questions")
+}
+
+model QuizAttempt {
+  id     String @id @default(uuid())
+  quizId String @map("quiz_id")
+  quiz   Quiz   @relation(fields: [quizId], references: [id], onDelete: Cascade)
+
+  studentId String         @map("student_id")
+  student   StudentProfile @relation(fields: [studentId], references: [id], onDelete: Cascade)
+
+  status QuizAttemptStatus @default(IN_PROGRESS)
+
+  startedAt   DateTime  @default(now()) @map("started_at")
+  submittedAt DateTime? @map("submitted_at")
+
+  // Auto-graded total (sum of QuizAnswer.marksAwarded) once SUBMITTED.
+  score      Int? @map("score")
+  totalMarks Int? @map("total_marks")
+
+  answers QuizAnswer[]
+
+  // One attempt per student per quiz - a student can resume an IN_PROGRESS
+  // attempt (e.g. after closing the tab) but can't start a second one after
+  // submitting.
+  @@unique([quizId, studentId])
+  @@map("quiz_attempts")
+}
+
+model QuizAnswer {
+  id String @id @default(uuid())
+
+  attemptId String      @map("attempt_id")
+  attempt   QuizAttempt @relation(fields: [attemptId], references: [id], onDelete: Cascade)
+
+  questionId String       @map("question_id")
+  question   QuizQuestion @relation(fields: [questionId], references: [id], onDelete: Cascade)
+
+  // The option index the student picked, as a string - matches
+  // QuizQuestion.correctAnswer's format so grading is a plain string compare.
+  responseText String?  @map("response_text")
+  isCorrect    Boolean? @map("is_correct")
+  marksAwarded Int?     @map("marks_awarded")
+
+  @@unique([attemptId, questionId])
+  @@map("quiz_answers")
 }
