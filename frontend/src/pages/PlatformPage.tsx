@@ -1,6 +1,6 @@
 import { FormEvent, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Crown, Plus, Ban, CheckCircle2 } from 'lucide-react';
+import { Crown, Plus, Ban, CheckCircle2, Pencil, Trash2 } from 'lucide-react';
 import { api, ApiError } from '@/lib/api';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -18,6 +18,7 @@ import {
   DialogDescription,
   DialogFooter,
 } from '@/components/ui/dialog';
+import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { formatDate } from '@/lib/utils';
 import type { PlatformSchool } from '@/types';
 
@@ -55,6 +56,13 @@ const form0 = {
   directorPassword: '',
 };
 
+const editForm0 = {
+  schoolName: '',
+  schoolCode: '',
+  schoolAddress: '',
+  schoolPhone: '',
+};
+
 export default function PlatformPage() {
   const queryClient = useQueryClient();
 
@@ -83,6 +91,64 @@ export default function PlatformPage() {
       api.patch(`/platform/schools/${id}/${blocked ? 'block' : 'unblock'}`),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['platform', 'schools'] }),
   });
+
+  const [editOpen, setEditOpen] = useState(false);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editForm, setEditForm] = useState(editForm0);
+  const [editError, setEditError] = useState<string | null>(null);
+
+  const updateSchool = useMutation({
+    mutationFn: ({ id, payload }: { id: string; payload: Record<string, unknown> }) =>
+      api.patch(`/platform/schools/${id}`, payload),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['platform', 'schools'] });
+      setEditOpen(false);
+      setEditingId(null);
+      setEditError(null);
+    },
+    onError: (err: unknown) => setEditError(err instanceof ApiError ? err.body?.message ?? err.message : 'Something went wrong'),
+  });
+
+  const [deleteTarget, setDeleteTarget] = useState<PlatformSchool | null>(null);
+
+  const deleteSchool = useMutation({
+    mutationFn: (id: string) => api.delete(`/platform/schools/${id}`),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['platform', 'schools'] });
+      setDeleteTarget(null);
+    },
+  });
+
+  function openEdit(s: PlatformSchool) {
+    setEditingId(s.id);
+    setEditForm({
+      schoolName: s.name,
+      schoolCode: s.code,
+      schoolAddress: s.address ?? '',
+      schoolPhone: s.phone ?? '',
+    });
+    setEditError(null);
+    setEditOpen(true);
+  }
+
+  function submitEdit(e: FormEvent) {
+    e.preventDefault();
+    setEditError(null);
+    if (!editingId) return;
+    if (!editForm.schoolName || !editForm.schoolCode) {
+      setEditError('Please fill all required fields.');
+      return;
+    }
+    updateSchool.mutate({
+      id: editingId,
+      payload: {
+        schoolName: editForm.schoolName,
+        schoolCode: editForm.schoolCode,
+        schoolAddress: editForm.schoolAddress || undefined,
+        schoolPhone: editForm.schoolPhone || undefined,
+      },
+    });
+  }
 
   function submit(e: FormEvent) {
     e.preventDefault();
@@ -171,29 +237,44 @@ export default function PlatformPage() {
                       <Badge variant={s.isActive ? 'success' : 'destructive'}>{s.isActive ? 'Active' : 'Blocked'}</Badge>
                     </TableCell>
                     <TableCell className="text-right">
-                      {s.isActive ? (
+                      <div className="flex items-center justify-end gap-1">
+                        <Button variant="ghost" size="sm" onClick={() => openEdit(s)}>
+                          <Pencil className="h-4 w-4" />
+                          Edit
+                        </Button>
+                        {s.isActive ? (
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="text-destructive hover:bg-destructive/10 hover:text-destructive"
+                            loading={toggleBlock.isPending}
+                            onClick={() => toggleBlock.mutate({ id: s.id, blocked: true })}
+                          >
+                            <Ban className="h-4 w-4" />
+                            Block
+                          </Button>
+                        ) : (
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="text-green-700 hover:bg-green-50"
+                            loading={toggleBlock.isPending}
+                            onClick={() => toggleBlock.mutate({ id: s.id, blocked: false })}
+                          >
+                            <CheckCircle2 className="h-4 w-4" />
+                            Unblock
+                          </Button>
+                        )}
                         <Button
                           variant="ghost"
                           size="sm"
                           className="text-destructive hover:bg-destructive/10 hover:text-destructive"
-                          loading={toggleBlock.isPending}
-                          onClick={() => toggleBlock.mutate({ id: s.id, blocked: true })}
+                          onClick={() => setDeleteTarget(s)}
                         >
-                          <Ban className="h-4 w-4" />
-                          Block
+                          <Trash2 className="h-4 w-4" />
+                          Delete
                         </Button>
-                      ) : (
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          className="text-green-700 hover:bg-green-50"
-                          loading={toggleBlock.isPending}
-                          onClick={() => toggleBlock.mutate({ id: s.id, blocked: false })}
-                        >
-                          <CheckCircle2 className="h-4 w-4" />
-                          Unblock
-                        </Button>
-                      )}
+                      </div>
                     </TableCell>
                   </TableRow>
                 ))}
@@ -273,6 +354,55 @@ export default function PlatformPage() {
           </form>
         </DialogContent>
       </Dialog>
+
+      <Dialog open={editOpen} onOpenChange={setEditOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Edit School</DialogTitle>
+            <DialogDescription>Update this school's name, code, address, or phone.</DialogDescription>
+          </DialogHeader>
+          <form onSubmit={submitEdit} className="space-y-4">
+            <div className="grid grid-cols-2 gap-4">
+              <Field label="School name" required>
+                <Input value={editForm.schoolName} onChange={(e) => setEditForm((f) => ({ ...f, schoolName: e.target.value }))} required />
+              </Field>
+              <Field label="School code" required>
+                <Input value={editForm.schoolCode} onChange={(e) => setEditForm((f) => ({ ...f, schoolCode: e.target.value }))} required />
+              </Field>
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <Field label="Address (optional)">
+                <Input value={editForm.schoolAddress} onChange={(e) => setEditForm((f) => ({ ...f, schoolAddress: e.target.value }))} />
+              </Field>
+              <Field label="Phone (optional)">
+                <Input value={editForm.schoolPhone} onChange={(e) => setEditForm((f) => ({ ...f, schoolPhone: e.target.value }))} />
+              </Field>
+            </div>
+            {editError && (
+              <div className="rounded-lg border border-destructive/20 bg-destructive/5 px-3 py-2 text-sm text-destructive">{editError}</div>
+            )}
+            <DialogFooter>
+              <Button type="button" variant="outline" onClick={() => setEditOpen(false)}>
+                Cancel
+              </Button>
+              <Button type="submit" loading={updateSchool.isPending}>
+                Save Changes
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
+
+      <ConfirmDialog
+        open={!!deleteTarget}
+        onOpenChange={(open) => !open && setDeleteTarget(null)}
+        title="Delete this school?"
+        description={`"${deleteTarget?.name ?? ''}" will be removed from the platform. Its Director/staff will no longer be able to log in, but existing records are kept.`}
+        confirmLabel="Delete"
+        destructive
+        loading={deleteSchool.isPending}
+        onConfirm={() => deleteTarget && deleteSchool.mutate(deleteTarget.id)}
+      />
     </div>
   );
 }

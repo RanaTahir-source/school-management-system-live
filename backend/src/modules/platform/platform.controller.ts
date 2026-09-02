@@ -1,7 +1,8 @@
-import { Body, Controller, Param, Patch, Post, Get, UseGuards } from '@nestjs/common';
+import { Body, Controller, Delete, Param, Patch, Post, Get, UseGuards } from '@nestjs/common';
 import { PlatformService } from './platform.service';
 import { OnboardSchoolDto } from './dto/onboard-school.dto';
 import { OnboardDirectorDto } from './dto/onboard-director.dto';
+import { UpdatePlatformSchoolDto } from './dto/update-platform-school.dto';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { RolesGuard } from '../../common/guards/roles.guard';
 import { Roles } from '../../common/decorators/roles.decorator';
@@ -43,8 +44,17 @@ export class PlatformController {
     return this.service.setBlocked(id, false, user);
   }
 
-  @Post('backfill-tenant-code')
-  backfillTenantCode(@CurrentUser() user: { userId: string }) {
-    return this.service.backfillTenantCode(user);
+  @Patch('schools/:id')
+  updateSchool(
+    @Param('id') id: string,
+    @Body() dto: UpdatePlatformSchoolDto,
+    @CurrentUser() user: { userId: string },
+  ) {
+    return this.service.updateSchool(id, dto, user);
+  }
+
+  @Delete('schools/:id')
+  deleteSchool(@Param('id') id: string, @CurrentUser() user: { userId: string }) {
+    return this.service.deleteSchool(id, user);
   }
 }
