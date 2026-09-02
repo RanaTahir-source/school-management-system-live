@@ -115,6 +115,8 @@ export default function AcademicsPage() {
   const [classOpen, setClassOpen] = useState(false);
   const [classForm, setClassForm] = useState({ schoolId: '', branchId: '', name: '', order: '' });
   const [classError, setClassError] = useState<string | null>(null);
+  const [editingClassId, setEditingClassId] = useState<string | null>(null);
+  const [deleteClassTarget, setDeleteClassTarget] = useState<ClassRecord | null>(null);
   const createClass = useMutation({
     mutationFn: (payload: Record<string, unknown>) => api.post('/classes', payload),
     onSuccess: () => {
@@ -124,6 +126,24 @@ export default function AcademicsPage() {
       setClassError(null);
     },
     onError: (err: unknown) => setClassError(err instanceof ApiError ? err.body?.message ?? err.message : 'Something went wrong'),
+  });
+  const updateClass = useMutation({
+    mutationFn: (payload: Record<string, unknown>) => api.patch(`/classes/${editingClassId}`, payload),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['classes'] });
+      setClassOpen(false);
+      setEditingClassId(null);
+      setClassForm({ schoolId: '', branchId: '', name: '', order: '' });
+      setClassError(null);
+    },
+    onError: (err: unknown) => setClassError(err instanceof ApiError ? err.body?.message ?? err.message : 'Something went wrong'),
+  });
+  const deleteClass = useMutation({
+    mutationFn: (id: string) => api.delete(`/classes/${id}`),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['classes'] });
+      setDeleteClassTarget(null);
+    },
   });
 
   // ---- Section dialog ----
@@ -136,6 +156,8 @@ export default function AcademicsPage() {
     classTeacherId: '',
   });
   const [sectionError, setSectionError] = useState<string | null>(null);
+  const [editingSectionId, setEditingSectionId] = useState<string | null>(null);
+  const [deleteSectionTarget, setDeleteSectionTarget] = useState<SectionRecord | null>(null);
   const createSection = useMutation({
     mutationFn: (payload: Record<string, unknown>) => api.post('/sections', payload),
     onSuccess: () => {
@@ -145,6 +167,24 @@ export default function AcademicsPage() {
       setSectionError(null);
     },
     onError: (err: unknown) => setSectionError(err instanceof ApiError ? err.body?.message ?? err.message : 'Something went wrong'),
+  });
+  const updateSection = useMutation({
+    mutationFn: (payload: Record<string, unknown>) => api.patch(`/sections/${editingSectionId}`, payload),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['sections'] });
+      setSectionOpen(false);
+      setEditingSectionId(null);
+      setSectionForm({ classId: '', academicYearId: '', name: '', capacity: '', classTeacherId: '' });
+      setSectionError(null);
+    },
+    onError: (err: unknown) => setSectionError(err instanceof ApiError ? err.body?.message ?? err.message : 'Something went wrong'),
+  });
+  const deleteSection = useMutation({
+    mutationFn: (id: string) => api.delete(`/sections/${id}`),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['sections'] });
+      setDeleteSectionTarget(null);
+    },
   });
 
   const yearSchoolBranches = useMemo(() => {
@@ -194,13 +234,31 @@ export default function AcademicsPage() {
   }
 
   function openClassDialog() {
+    setEditingClassId(null);
     setClassForm({ schoolId: isUnrestricted ? '' : user?.schoolId ?? '', branchId: '', name: '', order: '' });
+    setClassError(null);
+    setClassOpen(true);
+  }
+  function openEditClassDialog(c: ClassRecord) {
+    setEditingClassId(c.id);
+    setClassForm({ schoolId: c.schoolId, branchId: c.branchId, name: c.name, order: String(c.order ?? 0) });
     setClassError(null);
     setClassOpen(true);
   }
   function submitClass(e: FormEvent) {
     e.preventDefault();
     setClassError(null);
+    if (editingClassId) {
+      if (!classForm.name) {
+        setClassError('Please fill all required fields.');
+        return;
+      }
+      updateClass.mutate({
+        name: classForm.name,
+        order: classForm.order ? Number(classForm.order) : undefined,
+      });
+      return;
+    }
     const effectiveSchoolId = isUnrestricted ? classForm.schoolId : user?.schoolId;
     if (!effectiveSchoolId || !classForm.branchId || !classForm.name) {
       setClassError('Please fill all required fields.');
@@ -215,13 +273,38 @@ export default function AcademicsPage() {
   }
 
   function openSectionDialog() {
+    setEditingSectionId(null);
     setSectionForm({ classId: '', academicYearId: '', name: '', capacity: '', classTeacherId: '' });
+    setSectionError(null);
+    setSectionOpen(true);
+  }
+  function openEditSectionDialog(s: SectionRecord) {
+    setEditingSectionId(s.id);
+    setSectionForm({
+      classId: s.classId,
+      academicYearId: s.academicYear?.id ?? '',
+      name: s.name,
+      capacity: s.capacity !== null && s.capacity !== undefined ? String(s.capacity) : '',
+      classTeacherId: s.classTeacher?.id ?? '',
+    });
     setSectionError(null);
     setSectionOpen(true);
   }
   function submitSection(e: FormEvent) {
     e.preventDefault();
     setSectionError(null);
+    if (editingSectionId) {
+      if (!sectionForm.name) {
+        setSectionError('Please fill all required fields.');
+        return;
+      }
+      updateSection.mutate({
+        name: sectionForm.name,
+        capacity: sectionForm.capacity ? Number(sectionForm.capacity) : undefined,
+        classTeacherId: sectionForm.classTeacherId || undefined,
+      });
+      return;
+    }
     if (!sectionForm.classId || !sectionForm.academicYearId || !sectionForm.name) {
       setSectionError('Please fill all required fields.');
       return;
@@ -349,6 +432,7 @@ export default function AcademicsPage() {
                       <TableHead>Branch</TableHead>
                       <TableHead>Order</TableHead>
                       <TableHead>Status</TableHead>
+                      {canManage && <TableHead className="text-right">Actions</TableHead>}
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -363,6 +447,26 @@ export default function AcademicsPage() {
                             {c.isActive ? 'Active' : 'Inactive'}
                           </Badge>
                         </TableCell>
+                        {canManage && (
+                          <TableCell className="text-right">
+                            <div className="flex items-center justify-end gap-1">
+                              <Button variant="ghost" size="sm" onClick={() => openEditClassDialog(c)}>
+                                <Pencil className="h-4 w-4" />
+                                Edit
+                              </Button>
+                              {isUnrestricted && (
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  className="text-destructive hover:bg-destructive/10 hover:text-destructive"
+                                  onClick={() => setDeleteClassTarget(c)}
+                                >
+                                  <Trash2 className="h-4 w-4" />
+                                </Button>
+                              )}
+                            </div>
+                          </TableCell>
+                        )}
                       </TableRow>
                     ))}
                   </TableBody>
@@ -401,6 +505,7 @@ export default function AcademicsPage() {
                       <TableHead>Capacity</TableHead>
                       <TableHead>Class Teacher</TableHead>
                       <TableHead>Students</TableHead>
+                      {canManage && <TableHead className="text-right">Actions</TableHead>}
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -412,6 +517,26 @@ export default function AcademicsPage() {
                         <TableCell className="tabular-nums text-muted-foreground">{s.capacity ?? '—'}</TableCell>
                         <TableCell className="text-muted-foreground">{s.classTeacher?.fullName ?? '—'}</TableCell>
                         <TableCell className="tabular-nums text-muted-foreground">{s.students?.length ?? 0}</TableCell>
+                        {canManage && (
+                          <TableCell className="text-right">
+                            <div className="flex items-center justify-end gap-1">
+                              <Button variant="ghost" size="sm" onClick={() => openEditSectionDialog(s)}>
+                                <Pencil className="h-4 w-4" />
+                                Edit
+                              </Button>
+                              {isUnrestricted && (
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  className="text-destructive hover:bg-destructive/10 hover:text-destructive"
+                                  onClick={() => setDeleteSectionTarget(s)}
+                                >
+                                  <Trash2 className="h-4 w-4" />
+                                </Button>
+                              )}
+                            </div>
+                          </TableCell>
+                        )}
                       </TableRow>
                     ))}
                   </TableBody>
@@ -517,11 +642,19 @@ export default function AcademicsPage() {
       />
 
       {/* Class dialog */}
-      <Dialog open={classOpen} onOpenChange={setClassOpen}>
+      <Dialog
+        open={classOpen}
+        onOpenChange={(open) => {
+          setClassOpen(open);
+          if (!open) setEditingClassId(null);
+        }}
+      >
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Add Class</DialogTitle>
-            <DialogDescription>Create a class under a school branch.</DialogDescription>
+            <DialogTitle>{editingClassId ? 'Edit Class' : 'Add Class'}</DialogTitle>
+            <DialogDescription>
+              {editingClassId ? 'Update this class\'s name or display order.' : 'Create a class under a school branch.'}
+            </DialogDescription>
           </DialogHeader>
           <form onSubmit={submitClass} className="space-y-4">
             {isUnrestricted && (
@@ -529,6 +662,7 @@ export default function AcademicsPage() {
                 <Select
                   value={classForm.schoolId}
                   onValueChange={(v) => setClassForm((f) => ({ ...f, schoolId: v, branchId: '' }))}
+                  disabled={!!editingClassId}
                 >
                   <SelectTrigger>
                     <SelectValue placeholder="Select school" />
@@ -547,7 +681,7 @@ export default function AcademicsPage() {
               <Select
                 value={classForm.branchId}
                 onValueChange={(v) => setClassForm((f) => ({ ...f, branchId: v }))}
-                disabled={!yearSchoolBranches.length}
+                disabled={!!editingClassId || !yearSchoolBranches.length}
               >
                 <SelectTrigger>
                   <SelectValue placeholder="Select branch" />
@@ -583,29 +717,57 @@ export default function AcademicsPage() {
               </div>
             )}
             <DialogFooter>
-              <Button type="button" variant="outline" onClick={() => setClassOpen(false)}>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => {
+                  setClassOpen(false);
+                  setEditingClassId(null);
+                }}
+              >
                 Cancel
               </Button>
-              <Button type="submit" loading={createClass.isPending}>
-                Create
+              <Button type="submit" loading={editingClassId ? updateClass.isPending : createClass.isPending}>
+                {editingClassId ? 'Save Changes' : 'Create'}
               </Button>
             </DialogFooter>
           </form>
         </DialogContent>
       </Dialog>
 
+      <ConfirmDialog
+        open={!!deleteClassTarget}
+        onOpenChange={(open) => !open && setDeleteClassTarget(null)}
+        title="Delete this class?"
+        description={`This will permanently remove "${deleteClassTarget?.name}". Sections under this class may be affected.`}
+        confirmLabel="Delete"
+        loading={deleteClass.isPending}
+        onConfirm={() => deleteClassTarget && deleteClass.mutate(deleteClassTarget.id)}
+      />
+
       {/* Section dialog */}
-      <Dialog open={sectionOpen} onOpenChange={setSectionOpen}>
+      <Dialog
+        open={sectionOpen}
+        onOpenChange={(open) => {
+          setSectionOpen(open);
+          if (!open) setEditingSectionId(null);
+        }}
+      >
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Add Section</DialogTitle>
-            <DialogDescription>Create a section under a class for a given academic year.</DialogDescription>
+            <DialogTitle>{editingSectionId ? 'Edit Section' : 'Add Section'}</DialogTitle>
+            <DialogDescription>
+              {editingSectionId
+                ? "Update this section's name, capacity, or class teacher."
+                : 'Create a section under a class for a given academic year.'}
+            </DialogDescription>
           </DialogHeader>
           <form onSubmit={submitSection} className="space-y-4">
             <Field label="Class" required>
               <Select
                 value={sectionForm.classId}
                 onValueChange={(v) => setSectionForm((f) => ({ ...f, classId: v }))}
+                disabled={!!editingSectionId}
               >
                 <SelectTrigger>
                   <SelectValue placeholder="Select class" />
@@ -623,6 +785,7 @@ export default function AcademicsPage() {
               <Select
                 value={sectionForm.academicYearId}
                 onValueChange={(v) => setSectionForm((f) => ({ ...f, academicYearId: v }))}
+                disabled={!!editingSectionId}
               >
                 <SelectTrigger>
                   <SelectValue placeholder="Select academic year" />
@@ -675,16 +838,33 @@ export default function AcademicsPage() {
               </div>
             )}
             <DialogFooter>
-              <Button type="button" variant="outline" onClick={() => setSectionOpen(false)}>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => {
+                  setSectionOpen(false);
+                  setEditingSectionId(null);
+                }}
+              >
                 Cancel
               </Button>
-              <Button type="submit" loading={createSection.isPending}>
-                Create
+              <Button type="submit" loading={editingSectionId ? updateSection.isPending : createSection.isPending}>
+                {editingSectionId ? 'Save Changes' : 'Create'}
               </Button>
             </DialogFooter>
           </form>
         </DialogContent>
       </Dialog>
+
+      <ConfirmDialog
+        open={!!deleteSectionTarget}
+        onOpenChange={(open) => !open && setDeleteSectionTarget(null)}
+        title="Delete this section?"
+        description={`This will permanently remove "${deleteSectionTarget?.name}". Students enrolled in this section may be affected.`}
+        confirmLabel="Delete"
+        loading={deleteSection.isPending}
+        onConfirm={() => deleteSectionTarget && deleteSection.mutate(deleteSectionTarget.id)}
+      />
     </div>
   );
 }

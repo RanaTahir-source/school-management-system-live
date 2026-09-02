@@ -1,6 +1,6 @@
 import { FormEvent, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Building2, MapPin, Plus } from 'lucide-react';
+import { Building2, MapPin, Pencil, Plus, Trash2 } from 'lucide-react';
 import { api, ApiError } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
@@ -18,7 +18,8 @@ import {
   DialogFooter,
 } from '@/components/ui/dialog';
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from '@/components/ui/select';
-import type { School } from '@/types';
+import { ConfirmDialog } from '@/components/ConfirmDialog';
+import type { Branch, School } from '@/types';
 
 export default function SchoolsPage() {
   const { hasRole } = useAuth();
@@ -65,8 +66,40 @@ export default function SchoolsPage() {
     },
   });
 
+  const [editingBranchId, setEditingBranchId] = useState<string | null>(null);
+  const updateBranchMutation = useMutation({
+    mutationFn: (payload: Record<string, unknown>) => api.patch(`/branches/${editingBranchId}`, payload),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['schools'] });
+      setBranchDialogOpen(false);
+      setEditingBranchId(null);
+      setBranchForm({ schoolId: '', name: '', genderScope: '' });
+      setBranchError(null);
+    },
+    onError: (err: unknown) => {
+      setBranchError(err instanceof ApiError ? err.body?.message ?? err.message : 'Something went wrong');
+    },
+  });
+
+  const [deleteBranchTarget, setDeleteBranchTarget] = useState<Branch | null>(null);
+  const deleteBranchMutation = useMutation({
+    mutationFn: (id: string) => api.delete(`/branches/${id}`),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['schools'] });
+      setDeleteBranchTarget(null);
+    },
+  });
+
   function openBranchDialog(schoolId?: string) {
+    setEditingBranchId(null);
     setBranchForm({ schoolId: schoolId ?? '', name: '', genderScope: '' });
+    setBranchError(null);
+    setBranchDialogOpen(true);
+  }
+
+  function openEditBranchDialog(b: Branch) {
+    setEditingBranchId(b.id);
+    setBranchForm({ schoolId: b.schoolId, name: b.name, genderScope: b.genderScope });
     setBranchError(null);
     setBranchDialogOpen(true);
   }
@@ -89,7 +122,18 @@ export default function SchoolsPage() {
   function handleBranchSubmit(e: FormEvent) {
     e.preventDefault();
     setBranchError(null);
-    if (!branchForm.schoolId || !branchForm.name) {
+    if (!branchForm.name) {
+      setBranchError('Branch name is required.');
+      return;
+    }
+    if (editingBranchId) {
+      updateBranchMutation.mutate({
+        name: branchForm.name,
+        genderScope: branchForm.genderScope || undefined,
+      });
+      return;
+    }
+    if (!branchForm.schoolId) {
       setBranchError('School and branch name are required.');
       return;
     }
@@ -168,9 +212,28 @@ export default function SchoolsPage() {
                           <MapPin className="h-3.5 w-3.5 text-muted-foreground" />
                           <span className="text-sm text-foreground">{b.name}</span>
                         </div>
-                        <Badge variant="outline" className="text-[10px]">
-                          {b.genderScope}
-                        </Badge>
+                        <div className="flex items-center gap-1">
+                          <Badge variant="outline" className="text-[10px]">
+                            {b.genderScope}
+                          </Badge>
+                          {canCreateBranch && (
+                            <>
+                              <Button variant="ghost" size="sm" className="h-7 px-1.5" onClick={() => openEditBranchDialog(b)}>
+                                <Pencil className="h-3.5 w-3.5" />
+                              </Button>
+                              {hasRole('DIRECTOR', 'ADMIN') && (
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  className="h-7 px-1.5 text-destructive hover:bg-destructive/10 hover:text-destructive"
+                                  onClick={() => setDeleteBranchTarget(b)}
+                                >
+                                  <Trash2 className="h-3.5 w-3.5" />
+                                </Button>
+                              )}
+                            </>
+                          )}
+                        </div>
                       </div>
                     ))
                   )}
@@ -252,12 +315,20 @@ export default function SchoolsPage() {
         </DialogContent>
       </Dialog>
 
-      {/* Add Branch dialog */}
-      <Dialog open={branchDialogOpen} onOpenChange={setBranchDialogOpen}>
+      {/* Add/Edit Branch dialog */}
+      <Dialog
+        open={branchDialogOpen}
+        onOpenChange={(open) => {
+          setBranchDialogOpen(open);
+          if (!open) setEditingBranchId(null);
+        }}
+      >
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Add Branch</DialogTitle>
-            <DialogDescription>Create a new branch/campus under a school.</DialogDescription>
+            <DialogTitle>{editingBranchId ? 'Edit Branch' : 'Add Branch'}</DialogTitle>
+            <DialogDescription>
+              {editingBranchId ? "Update this branch's name or gender scope." : 'Create a new branch/campus under a school.'}
+            </DialogDescription>
           </DialogHeader>
           <form onSubmit={handleBranchSubmit} className="space-y-4">
             <div className="space-y-1.5">
@@ -267,6 +338,7 @@ export default function SchoolsPage() {
               <Select
                 value={branchForm.schoolId}
                 onValueChange={(v) => setBranchForm((f) => ({ ...f, schoolId: v }))}
+                disabled={!!editingBranchId}
               >
                 <SelectTrigger>
                   <SelectValue placeholder="Select school" />
@@ -313,16 +385,33 @@ export default function SchoolsPage() {
               </div>
             )}
             <DialogFooter>
-              <Button type="button" variant="outline" onClick={() => setBranchDialogOpen(false)}>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => {
+                  setBranchDialogOpen(false);
+                  setEditingBranchId(null);
+                }}
+              >
                 Cancel
               </Button>
-              <Button type="submit" loading={createBranchMutation.isPending}>
-                Create Branch
+              <Button type="submit" loading={editingBranchId ? updateBranchMutation.isPending : createBranchMutation.isPending}>
+                {editingBranchId ? 'Save Changes' : 'Create Branch'}
               </Button>
             </DialogFooter>
           </form>
         </DialogContent>
       </Dialog>
+
+      <ConfirmDialog
+        open={!!deleteBranchTarget}
+        onOpenChange={(open) => !open && setDeleteBranchTarget(null)}
+        title="Delete this branch?"
+        description={`This will remove "${deleteBranchTarget?.name}". Classes/sections tied to this branch may be affected.`}
+        confirmLabel="Delete"
+        loading={deleteBranchMutation.isPending}
+        onConfirm={() => deleteBranchTarget && deleteBranchMutation.mutate(deleteBranchTarget.id)}
+      />
     </div>
   );
 }
