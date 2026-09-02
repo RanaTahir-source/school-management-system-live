@@ -1,6 +1,6 @@
-import { Body, Controller, Delete, Get, Param, Post, Query, UseGuards } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, Patch, Post, Query, UseGuards } from '@nestjs/common';
 import { StudyMaterialsService } from './study-materials.service';
-import { CreateStudyMaterialDto } from './dto/create-study-material.dto';
+import { CreateStudyMaterialDto, UpdateStudyMaterialDto } from './dto/create-study-material.dto';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { RolesGuard } from '../../common/guards/roles.guard';
 import { Roles } from '../../common/decorators/roles.decorator';
@@ -30,6 +30,12 @@ export class StudyMaterialsController {
     @Query('subjectId') subjectId?: string,
   ) {
     return this.service.findAll(user, schoolId, classId, subjectId);
+  }
+
+  @Patch(':id')
+  @Roles('DIRECTOR', 'ADMIN', 'PRINCIPAL', 'TEACHER')
+  update(@Param('id') id: string, @Body() dto: UpdateStudyMaterialDto, @CurrentUser() user: ScopedUser) {
+    return this.service.update(id, dto, user);
   }
 
   @Delete(':id')

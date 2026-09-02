@@ -30,3 +30,30 @@ export class CreateStudyMaterialDto {
   @IsEnum(MaterialType)
   type?: MaterialType;
 }
+
+export class UpdateStudyMaterialDto {
+  @IsOptional()
+  @IsUUID()
+  classId?: string;
+
+  @IsOptional()
+  @IsUUID()
+  subjectId?: string;
+
+  @IsOptional()
+  @IsString()
+  @IsNotEmpty()
+  title?: string;
+
+  @IsOptional()
+  @IsString()
+  description?: string;
+
+  @IsOptional()
+  @IsUrl({ require_tld: false })
+  fileUrl?: string;
+
+  @IsOptional()
+  @IsEnum(MaterialType)
+  type?: MaterialType;
+}

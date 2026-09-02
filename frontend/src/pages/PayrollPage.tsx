@@ -1,6 +1,6 @@
 import { FormEvent, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Banknote, IdCard, Plus, ReceiptText, Wallet } from 'lucide-react';
+import { Banknote, IdCard, Pencil, Plus, ReceiptText, Wallet } from 'lucide-react';
 import { api, ApiError } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
@@ -87,6 +87,7 @@ export default function PayrollPage() {
   const [staffOpen, setStaffOpen] = useState(false);
   const [staffForm, setStaffForm] = useState(staffForm0);
   const [staffError, setStaffError] = useState<string | null>(null);
+  const [editingStaffId, setEditingStaffId] = useState<string | null>(null);
   const [deactivateStaff, setDeactivateStaff] = useState<PayrollStaffProfile | null>(null);
 
   const createStaffProfile = useMutation({
@@ -95,6 +96,18 @@ export default function PayrollPage() {
       queryClient.invalidateQueries({ queryKey: ['payroll', 'staff-profiles'] });
       queryClient.invalidateQueries({ queryKey: ['payroll', 'eligible-users'] });
       setStaffOpen(false);
+      setStaffForm(staffForm0);
+      setStaffError(null);
+    },
+    onError: (err: unknown) => setStaffError(err instanceof ApiError ? err.body?.message ?? err.message : 'Something went wrong'),
+  });
+  const updateStaffProfile = useMutation({
+    mutationFn: (payload: Record<string, unknown>) => api.patch(`/payroll/staff-profiles/${editingStaffId}`, payload),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['payroll', 'staff-profiles'] });
+      queryClient.invalidateQueries({ queryKey: ['payroll', 'eligible-users'] });
+      setStaffOpen(false);
+      setEditingStaffId(null);
       setStaffForm(staffForm0);
       setStaffError(null);
     },
@@ -110,13 +123,41 @@ export default function PayrollPage() {
   });
 
   function openStaffDialog() {
+    setEditingStaffId(null);
     setStaffForm(staffForm0);
+    setStaffError(null);
+    setStaffOpen(true);
+  }
+  function openEditStaffDialog(s: PayrollStaffProfile) {
+    setEditingStaffId(s.id);
+    setStaffForm({
+      userId: s.userId,
+      employeeId: s.employeeId ?? '',
+      category: s.category ?? '',
+      designation: s.designation ?? '',
+      phone: s.phone ?? '',
+      joiningDate: s.joiningDate ? s.joiningDate.slice(0, 10) : '',
+    });
     setStaffError(null);
     setStaffOpen(true);
   }
   function submitStaff(e: FormEvent) {
     e.preventDefault();
     setStaffError(null);
+    if (editingStaffId) {
+      if (!staffForm.employeeId) {
+        setStaffError('Please enter an employee ID.');
+        return;
+      }
+      updateStaffProfile.mutate({
+        employeeId: staffForm.employeeId,
+        category: staffForm.category || undefined,
+        designation: staffForm.designation || undefined,
+        phone: staffForm.phone || undefined,
+        joiningDate: staffForm.joiningDate || undefined,
+      });
+      return;
+    }
     if (!staffForm.userId || !staffForm.employeeId) {
       setStaffError('Please select a user and enter an employee ID.');
       return;
@@ -278,7 +319,7 @@ export default function PayrollPage() {
                         <TableHead>Category</TableHead>
                         <TableHead>Designation</TableHead>
                         <TableHead>Status</TableHead>
-                        {canDeleteStaff && <TableHead className="text-right">Actions</TableHead>}
+                        {canManageStaff && <TableHead className="text-right">Actions</TableHead>}
                       </TableRow>
                     </TableHeader>
                     <TableBody>
@@ -291,13 +332,19 @@ export default function PayrollPage() {
                           <TableCell>
                             <Badge variant={s.isActive ? 'success' : 'secondary'}>{s.isActive ? 'Active' : 'Inactive'}</Badge>
                           </TableCell>
-                          {canDeleteStaff && (
+                          {canManageStaff && (
                             <TableCell className="text-right">
-                              {s.isActive && (
-                                <Button variant="ghost" size="sm" onClick={() => setDeactivateStaff(s)}>
-                                  Deactivate
+                              <div className="flex items-center justify-end gap-1">
+                                <Button variant="ghost" size="sm" onClick={() => openEditStaffDialog(s)}>
+                                  <Pencil className="h-4 w-4" />
+                                  Edit
                                 </Button>
-                              )}
+                                {canDeleteStaff && s.isActive && (
+                                  <Button variant="ghost" size="sm" onClick={() => setDeactivateStaff(s)}>
+                                    Deactivate
+                                  </Button>
+                                )}
+                              </div>
                             </TableCell>
                           )}
                         </TableRow>
@@ -477,27 +524,44 @@ export default function PayrollPage() {
         </TabsContent>
       </Tabs>
 
-      {/* Register staff profile dialog */}
-      <Dialog open={staffOpen} onOpenChange={setStaffOpen}>
+      {/* Register / edit staff profile dialog */}
+      <Dialog
+        open={staffOpen}
+        onOpenChange={(open) => {
+          setStaffOpen(open);
+          if (!open) setEditingStaffId(null);
+        }}
+      >
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Register Staff Profile</DialogTitle>
-            <DialogDescription>Attach HR details to an existing account so it can be paid through Payroll.</DialogDescription>
+            <DialogTitle>{editingStaffId ? 'Edit Staff Profile' : 'Register Staff Profile'}</DialogTitle>
+            <DialogDescription>
+              {editingStaffId
+                ? "Update this staff member's HR details."
+                : 'Attach HR details to an existing account so it can be paid through Payroll.'}
+            </DialogDescription>
           </DialogHeader>
           <form onSubmit={submitStaff} className="space-y-4">
             <Field label="User account" required>
-              <Select value={staffForm.userId} onValueChange={(v) => setStaffForm((f) => ({ ...f, userId: v }))}>
-                <SelectTrigger>
-                  <SelectValue placeholder="Select a user without a staff profile yet" />
-                </SelectTrigger>
-                <SelectContent>
-                  {(eligibleUsersQuery.data ?? []).map((u) => (
-                    <SelectItem key={u.id} value={u.id}>
-                      {u.fullName} — {u.email}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              {editingStaffId ? (
+                <Input
+                  value={`${staffQuery.data?.find((s) => s.id === editingStaffId)?.user.fullName ?? ''} — ${staffQuery.data?.find((s) => s.id === editingStaffId)?.user.email ?? ''}`}
+                  disabled
+                />
+              ) : (
+                <Select value={staffForm.userId} onValueChange={(v) => setStaffForm((f) => ({ ...f, userId: v }))}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select a user without a staff profile yet" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {(eligibleUsersQuery.data ?? []).map((u) => (
+                      <SelectItem key={u.id} value={u.id}>
+                        {u.fullName} — {u.email}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              )}
             </Field>
             <Field label="Employee ID" required>
               <Input value={staffForm.employeeId} onChange={(e) => setStaffForm((f) => ({ ...f, employeeId: e.target.value }))} required />
@@ -520,11 +584,18 @@ export default function PayrollPage() {
               <div className="rounded-lg border border-destructive/20 bg-destructive/5 px-3 py-2 text-sm text-destructive">{staffError}</div>
             )}
             <DialogFooter>
-              <Button type="button" variant="outline" onClick={() => setStaffOpen(false)}>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => {
+                  setStaffOpen(false);
+                  setEditingStaffId(null);
+                }}
+              >
                 Cancel
               </Button>
-              <Button type="submit" loading={createStaffProfile.isPending}>
-                Register
+              <Button type="submit" loading={editingStaffId ? updateStaffProfile.isPending : createStaffProfile.isPending}>
+                {editingStaffId ? 'Save Changes' : 'Register'}
               </Button>
             </DialogFooter>
           </form>

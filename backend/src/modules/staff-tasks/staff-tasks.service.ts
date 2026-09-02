@@ -85,7 +85,7 @@ export class StaffTasksService {
 
   async update(id: string, dto: UpdateStaffTaskDto, currentUser: ScopedUser) {
     await this.findOne(id, currentUser);
-    return this.prisma.staffTask.update({
+    const task = await this.prisma.staffTask.update({
       where: { id },
       data: {
         ...dto,
@@ -93,6 +93,18 @@ export class StaffTasksService {
       },
       include: this.include,
     });
+
+    await this.prisma.auditLog.create({
+      data: {
+        userId: currentUser.userId,
+        schoolId: task.schoolId,
+        action: 'TASK_UPDATED',
+        entity: 'StaffTask',
+        entityId: id,
+      },
+    });
+
+    return task;
   }
 
   // Assignee can update their own task's status without needing manager

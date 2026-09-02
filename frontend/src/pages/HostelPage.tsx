@@ -1,6 +1,6 @@
 import { FormEvent, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { BedDouble, DoorOpen, Plus, Trash2, UserPlus, Users } from 'lucide-react';
+import { BedDouble, DoorOpen, Pencil, Plus, Trash2, UserPlus, Users } from 'lucide-react';
 import { api, ApiError } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
@@ -74,6 +74,7 @@ export default function HostelPage() {
   const [roomOpen, setRoomOpen] = useState(false);
   const [roomForm, setRoomForm] = useState(roomForm0);
   const [roomError, setRoomError] = useState<string | null>(null);
+  const [editingRoomId, setEditingRoomId] = useState<string | null>(null);
   const [deactivateRoom, setDeactivateRoom] = useState<HostelRoom | null>(null);
 
   const createRoom = useMutation({
@@ -81,6 +82,17 @@ export default function HostelPage() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['hostel', 'rooms'] });
       setRoomOpen(false);
+      setRoomForm(roomForm0);
+      setRoomError(null);
+    },
+    onError: (err: unknown) => setRoomError(err instanceof ApiError ? err.body?.message ?? err.message : 'Something went wrong'),
+  });
+  const updateRoom = useMutation({
+    mutationFn: (payload: Record<string, unknown>) => api.patch(`/hostel/rooms/${editingRoomId}`, payload),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['hostel', 'rooms'] });
+      setRoomOpen(false);
+      setEditingRoomId(null);
       setRoomForm(roomForm0);
       setRoomError(null);
     },
@@ -95,13 +107,43 @@ export default function HostelPage() {
   });
 
   function openRoomDialog() {
+    setEditingRoomId(null);
     setRoomForm({ ...roomForm0, schoolId: isUnrestricted ? '' : user?.schoolId ?? '' });
+    setRoomError(null);
+    setRoomOpen(true);
+  }
+  function openEditRoomDialog(r: HostelRoom) {
+    setEditingRoomId(r.id);
+    setRoomForm({
+      schoolId: r.schoolId,
+      roomNo: r.roomNo,
+      block: r.block ?? '',
+      floor: r.floor ?? '',
+      capacity: String(r.capacity ?? 1),
+      roomType: r.roomType ?? '',
+      monthlyFee: r.monthlyFee ? String(r.monthlyFee) : '',
+    });
     setRoomError(null);
     setRoomOpen(true);
   }
   function submitRoom(e: FormEvent) {
     e.preventDefault();
     setRoomError(null);
+    if (editingRoomId) {
+      if (!roomForm.roomNo) {
+        setRoomError('Please fill all required fields.');
+        return;
+      }
+      updateRoom.mutate({
+        roomNo: roomForm.roomNo,
+        block: roomForm.block || undefined,
+        floor: roomForm.floor || undefined,
+        capacity: roomForm.capacity ? Number(roomForm.capacity) : undefined,
+        roomType: roomForm.roomType || undefined,
+        monthlyFee: roomForm.monthlyFee ? Number(roomForm.monthlyFee) : undefined,
+      });
+      return;
+    }
     const effectiveSchoolId = isUnrestricted ? roomForm.schoolId : user?.schoolId;
     if (!effectiveSchoolId || !roomForm.roomNo) {
       setRoomError('Please fill all required fields.');
@@ -294,7 +336,7 @@ export default function HostelPage() {
                         <TableHead>Occupancy</TableHead>
                         <TableHead>Monthly Fee</TableHead>
                         <TableHead>Status</TableHead>
-                        {canDelete && <TableHead className="text-right">Actions</TableHead>}
+                        {canManage && <TableHead className="text-right">Actions</TableHead>}
                       </TableRow>
                     </TableHeader>
                     <TableBody>
@@ -311,9 +353,12 @@ export default function HostelPage() {
                           <TableCell>
                             <Badge variant={r.isActive ? 'success' : 'secondary'}>{r.isActive ? 'Active' : 'Inactive'}</Badge>
                           </TableCell>
-                          {canDelete && (
+                          {canManage && (
                             <TableCell className="text-right">
-                              {r.isActive && (
+                              <Button variant="ghost" size="sm" onClick={() => openEditRoomDialog(r)}>
+                                <Pencil className="h-4 w-4" />
+                              </Button>
+                              {canDelete && r.isActive && (
                                 <Button
                                   variant="ghost"
                                   size="sm"
@@ -568,17 +613,29 @@ export default function HostelPage() {
         )}
       </Tabs>
 
-      {/* Add room dialog */}
-      <Dialog open={roomOpen} onOpenChange={setRoomOpen}>
+      {/* Add/Edit room dialog */}
+      <Dialog
+        open={roomOpen}
+        onOpenChange={(open) => {
+          setRoomOpen(open);
+          if (!open) setEditingRoomId(null);
+        }}
+      >
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Add Room</DialogTitle>
-            <DialogDescription>Add a hostel room to the roster.</DialogDescription>
+            <DialogTitle>{editingRoomId ? 'Edit Room' : 'Add Room'}</DialogTitle>
+            <DialogDescription>
+              {editingRoomId ? 'Update this room\'s details.' : 'Add a hostel room to the roster.'}
+            </DialogDescription>
           </DialogHeader>
           <form onSubmit={submitRoom} className="space-y-4">
             {isUnrestricted && (
               <Field label="School" required>
-                <Select value={roomForm.schoolId} onValueChange={(v) => setRoomForm((f) => ({ ...f, schoolId: v }))}>
+                <Select
+                  value={roomForm.schoolId}
+                  onValueChange={(v) => setRoomForm((f) => ({ ...f, schoolId: v }))}
+                  disabled={!!editingRoomId}
+                >
                   <SelectTrigger>
                     <SelectValue placeholder="Select school" />
                   </SelectTrigger>
@@ -616,11 +673,18 @@ export default function HostelPage() {
               <div className="rounded-lg border border-destructive/20 bg-destructive/5 px-3 py-2 text-sm text-destructive">{roomError}</div>
             )}
             <DialogFooter>
-              <Button type="button" variant="outline" onClick={() => setRoomOpen(false)}>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => {
+                  setRoomOpen(false);
+                  setEditingRoomId(null);
+                }}
+              >
                 Cancel
               </Button>
-              <Button type="submit" loading={createRoom.isPending}>
-                Add Room
+              <Button type="submit" loading={editingRoomId ? updateRoom.isPending : createRoom.isPending}>
+                {editingRoomId ? 'Save Changes' : 'Add Room'}
               </Button>
             </DialogFooter>
           </form>

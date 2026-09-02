@@ -1,6 +1,7 @@
 import { Body, Controller, Delete, Get, Param, Patch, UseGuards } from '@nestjs/common';
 import { UsersService } from './users.service';
 import { UpdateUserRolesDto } from './dto/update-user-roles.dto';
+import { UpdateStaffProfileDto } from './dto/update-staff-profile.dto';
 import { ResetUserPasswordDto } from './dto/reset-user-password.dto';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { RolesGuard } from '../../common/guards/roles.guard';
@@ -25,6 +26,14 @@ export class UsersController {
   @Roles('DIRECTOR', 'ADMIN', 'PRINCIPAL')
   findOne(@Param('id') id: string, @CurrentUser() user: Requester) {
     return this.usersService.findOne(id, user);
+  }
+
+  // Edits a staff account's own profile (fullName/email/phone/school/branch)
+  // - separate from PATCH :id/roles below, which only touches roleNames.
+  @Patch(':id')
+  @Roles('DIRECTOR', 'ADMIN')
+  updateProfile(@Param('id') id: string, @Body() dto: UpdateStaffProfileDto, @CurrentUser() user: Requester) {
+    return this.usersService.updateProfile(id, dto, user);
   }
 
   // Admin-assisted reset - no OTP. Director resets anyone in their own

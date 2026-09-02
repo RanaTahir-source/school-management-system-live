@@ -36,8 +36,20 @@ export class SubjectsService {
   }
 
   async update(id: string, dto: UpdateSubjectDto, currentUser: ScopedUser) {
-    await this.findOne(id, currentUser);
-    return this.prisma.subject.update({ where: { id }, data: dto });
+    const subject = await this.findOne(id, currentUser);
+    const updated = await this.prisma.subject.update({ where: { id }, data: dto });
+
+    await this.prisma.auditLog.create({
+      data: {
+        userId: currentUser.userId,
+        schoolId: subject.schoolId,
+        action: 'SUBJECT_UPDATED',
+        entity: 'Subject',
+        entityId: id,
+      },
+    });
+
+    return updated;
   }
 
   async remove(id: string, currentUser: ScopedUser) {

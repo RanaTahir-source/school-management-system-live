@@ -1,6 +1,6 @@
 import { FormEvent, useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { AlertTriangle, ArrowDownCircle, ArrowUpCircle, Boxes, Package, Plus, Settings2, Trash2, Wrench } from 'lucide-react';
+import { AlertTriangle, ArrowDownCircle, ArrowUpCircle, Boxes, Package, Pencil, Plus, Settings2, Trash2, Wrench } from 'lucide-react';
 import { api, ApiError } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
 import { Card, CardContent } from '@/components/ui/card';
@@ -109,6 +109,7 @@ function InventoryTab() {
   const [itemOpen, setItemOpen] = useState(false);
   const [itemForm, setItemForm] = useState<ItemForm>(EMPTY_ITEM_FORM);
   const [itemError, setItemError] = useState<string | null>(null);
+  const [editingItemId, setEditingItemId] = useState<string | null>(null);
   const [txnTarget, setTxnTarget] = useState<InventoryItem | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<InventoryItem | null>(null);
 
@@ -140,6 +141,18 @@ function InventoryTab() {
     onError: (err: unknown) => setItemError(err instanceof ApiError ? err.body?.message ?? err.message : 'Something went wrong'),
   });
 
+  const updateItemMutation = useMutation({
+    mutationFn: (payload: Record<string, unknown>) => api.patch(`/inventory/items/${editingItemId}`, payload),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['inventory-items'] });
+      setItemOpen(false);
+      setEditingItemId(null);
+      setItemForm(EMPTY_ITEM_FORM);
+      setItemError(null);
+    },
+    onError: (err: unknown) => setItemError(err instanceof ApiError ? err.body?.message ?? err.message : 'Something went wrong'),
+  });
+
   const deleteMutation = useMutation({
     mutationFn: (id: string) => api.delete(`/inventory/items/${id}`),
     onSuccess: () => {
@@ -149,7 +162,26 @@ function InventoryTab() {
   });
 
   function openAddItem() {
+    setEditingItemId(null);
     setItemForm({ ...EMPTY_ITEM_FORM, schoolId: isUnrestricted ? '' : user?.schoolId ?? '' });
+    setItemError(null);
+    setItemOpen(true);
+  }
+
+  function openEditItem(item: InventoryItem) {
+    setEditingItemId(item.id);
+    setItemForm({
+      schoolId: item.schoolId,
+      branchId: item.branchId ?? '',
+      name: item.name,
+      category: item.category ?? '',
+      sku: item.sku ?? '',
+      unit: item.unit,
+      costPrice: item.costPrice ?? '',
+      sellPrice: item.sellPrice ?? '',
+      openingQuantity: '',
+      reorderLevel: item.reorderLevel != null ? String(item.reorderLevel) : '',
+    });
     setItemError(null);
     setItemOpen(true);
   }
@@ -157,9 +189,23 @@ function InventoryTab() {
   function handleItemSubmit(e: FormEvent) {
     e.preventDefault();
     setItemError(null);
+    if (!itemForm.name.trim()) return setItemError('Please enter an item name.');
+
+    if (editingItemId) {
+      updateItemMutation.mutate({
+        name: itemForm.name,
+        category: itemForm.category || undefined,
+        sku: itemForm.sku || undefined,
+        unit: itemForm.unit || 'pcs',
+        costPrice: itemForm.costPrice ? Number(itemForm.costPrice) : undefined,
+        sellPrice: itemForm.sellPrice ? Number(itemForm.sellPrice) : undefined,
+        reorderLevel: itemForm.reorderLevel ? Number(itemForm.reorderLevel) : undefined,
+      });
+      return;
+    }
+
     const effectiveSchoolId = isUnrestricted ? itemForm.schoolId : user?.schoolId;
     if (!effectiveSchoolId) return setItemError('Please select a school.');
-    if (!itemForm.name.trim()) return setItemError('Please enter an item name.');
 
     createItemMutation.mutate({
       schoolId: effectiveSchoolId,
@@ -260,6 +306,9 @@ function InventoryTab() {
                             <Settings2 className="h-4 w-4" />
                             Stock
                           </Button>
+                          <Button variant="ghost" size="sm" onClick={() => openEditItem(item)}>
+                            <Pencil className="h-4 w-4" />
+                          </Button>
                           <Button
                             variant="ghost"
                             size="sm"
@@ -279,10 +328,16 @@ function InventoryTab() {
         </CardContent>
       </Card>
 
-      <Dialog open={itemOpen} onOpenChange={setItemOpen}>
+      <Dialog
+        open={itemOpen}
+        onOpenChange={(o) => {
+          setItemOpen(o);
+          if (!o) setEditingItemId(null);
+        }}
+      >
         <DialogContent size="lg">
           <DialogHeader>
-            <DialogTitle>Add Inventory Item</DialogTitle>
+            <DialogTitle>{editingItemId ? 'Edit Inventory Item' : 'Add Inventory Item'}</DialogTitle>
             <DialogDescription>An item sold at the school shop (uniform, stationery, book, etc.).</DialogDescription>
           </DialogHeader>
           <form onSubmit={handleItemSubmit} className="space-y-4">
@@ -295,7 +350,11 @@ function InventoryTab() {
               </Field>
               {isUnrestricted && (
                 <Field label="School" required>
-                  <Select value={itemForm.schoolId} onValueChange={(v) => setItemForm((f) => ({ ...f, schoolId: v, branchId: '' }))}>
+                  <Select
+                    value={itemForm.schoolId}
+                    onValueChange={(v) => setItemForm((f) => ({ ...f, schoolId: v, branchId: '' }))}
+                    disabled={!!editingItemId}
+                  >
                     <SelectTrigger>
                       <SelectValue placeholder="Select school" />
                     </SelectTrigger>
@@ -310,7 +369,11 @@ function InventoryTab() {
                 </Field>
               )}
               <Field label="Branch">
-                <Select value={itemForm.branchId || '__none__'} onValueChange={(v) => setItemForm((f) => ({ ...f, branchId: v === '__none__' ? '' : v }))} disabled={!schoolBranches.length}>
+                <Select
+                  value={itemForm.branchId || '__none__'}
+                  onValueChange={(v) => setItemForm((f) => ({ ...f, branchId: v === '__none__' ? '' : v }))}
+                  disabled={!!editingItemId || !schoolBranches.length}
+                >
                   <SelectTrigger>
                     <SelectValue placeholder="All branches" />
                   </SelectTrigger>
@@ -336,24 +399,38 @@ function InventoryTab() {
               <Field label="Sell price (Rs.)">
                 <Input type="number" min={0} value={itemForm.sellPrice} onChange={(e) => setItemForm((f) => ({ ...f, sellPrice: e.target.value }))} />
               </Field>
-              <Field label="Opening stock quantity">
-                <Input type="number" min={0} value={itemForm.openingQuantity} onChange={(e) => setItemForm((f) => ({ ...f, openingQuantity: e.target.value }))} />
-              </Field>
+              {!editingItemId && (
+                <Field label="Opening stock quantity">
+                  <Input type="number" min={0} value={itemForm.openingQuantity} onChange={(e) => setItemForm((f) => ({ ...f, openingQuantity: e.target.value }))} />
+                </Field>
+              )}
               <Field label="Reorder level (low-stock alert)">
                 <Input type="number" min={0} value={itemForm.reorderLevel} onChange={(e) => setItemForm((f) => ({ ...f, reorderLevel: e.target.value }))} />
               </Field>
             </div>
+            {editingItemId && (
+              <p className="text-xs text-muted-foreground">
+                Stock quantity isn&apos;t edited here — use the Stock button to record a purchase, sale, or adjustment.
+              </p>
+            )}
 
             {itemError && (
               <div className="rounded-lg border border-destructive/20 bg-destructive/5 px-3 py-2 text-sm text-destructive">{itemError}</div>
             )}
 
             <DialogFooter>
-              <Button type="button" variant="outline" onClick={() => setItemOpen(false)}>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => {
+                  setItemOpen(false);
+                  setEditingItemId(null);
+                }}
+              >
                 Cancel
               </Button>
-              <Button type="submit" loading={createItemMutation.isPending}>
-                Add Item
+              <Button type="submit" loading={editingItemId ? updateItemMutation.isPending : createItemMutation.isPending}>
+                {editingItemId ? 'Save Changes' : 'Add Item'}
               </Button>
             </DialogFooter>
           </form>
@@ -572,6 +649,7 @@ function AssetsTab() {
   const [formOpen, setFormOpen] = useState(false);
   const [form, setForm] = useState<AssetForm>(EMPTY_ASSET_FORM);
   const [formError, setFormError] = useState<string | null>(null);
+  const [editingAssetId, setEditingAssetId] = useState<string | null>(null);
   const [detailId, setDetailId] = useState<string | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<Asset | null>(null);
 
@@ -603,6 +681,18 @@ function AssetsTab() {
     onError: (err: unknown) => setFormError(err instanceof ApiError ? err.body?.message ?? err.message : 'Something went wrong'),
   });
 
+  const updateMutation = useMutation({
+    mutationFn: (payload: Record<string, unknown>) => api.patch(`/assets/${editingAssetId}`, payload),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['assets'] });
+      setFormOpen(false);
+      setEditingAssetId(null);
+      setForm(EMPTY_ASSET_FORM);
+      setFormError(null);
+    },
+    onError: (err: unknown) => setFormError(err instanceof ApiError ? err.body?.message ?? err.message : 'Something went wrong'),
+  });
+
   const deleteMutation = useMutation({
     mutationFn: (id: string) => api.delete(`/assets/${id}`),
     onSuccess: () => {
@@ -612,7 +702,28 @@ function AssetsTab() {
   });
 
   function openAdd() {
+    setEditingAssetId(null);
     setForm({ ...EMPTY_ASSET_FORM, schoolId: isUnrestricted ? '' : user?.schoolId ?? '' });
+    setFormError(null);
+    setFormOpen(true);
+  }
+
+  function openEditAsset(asset: Asset) {
+    setEditingAssetId(asset.id);
+    setForm({
+      schoolId: asset.schoolId,
+      branchId: asset.branchId ?? '',
+      name: asset.name,
+      category: asset.category ?? '',
+      assetTag: asset.assetTag ?? '',
+      purchaseDate: asset.purchaseDate ? asset.purchaseDate.slice(0, 10) : '',
+      purchaseCost: asset.purchaseCost ?? '',
+      condition: asset.condition,
+      location: asset.location ?? '',
+      assignedToId: asset.assignedTo?.id ?? '',
+      warrantyExpiryDate: asset.warrantyExpiryDate ? asset.warrantyExpiryDate.slice(0, 10) : '',
+      notes: asset.notes ?? '',
+    });
     setFormError(null);
     setFormOpen(true);
   }
@@ -620,9 +731,26 @@ function AssetsTab() {
   function handleSubmit(e: FormEvent) {
     e.preventDefault();
     setFormError(null);
+    if (!form.name.trim()) return setFormError('Please enter an asset name.');
+
+    if (editingAssetId) {
+      updateMutation.mutate({
+        name: form.name,
+        category: form.category || undefined,
+        assetTag: form.assetTag || undefined,
+        purchaseDate: form.purchaseDate || undefined,
+        purchaseCost: form.purchaseCost ? Number(form.purchaseCost) : undefined,
+        condition: form.condition,
+        location: form.location || undefined,
+        assignedToId: form.assignedToId || undefined,
+        warrantyExpiryDate: form.warrantyExpiryDate || undefined,
+        notes: form.notes || undefined,
+      });
+      return;
+    }
+
     const effectiveSchoolId = isUnrestricted ? form.schoolId : user?.schoolId;
     if (!effectiveSchoolId) return setFormError('Please select a school.');
-    if (!form.name.trim()) return setFormError('Please enter an asset name.');
 
     createMutation.mutate({
       schoolId: effectiveSchoolId,
@@ -696,6 +824,9 @@ function AssetsTab() {
                           <Wrench className="h-4 w-4" />
                           Details
                         </Button>
+                        <Button variant="ghost" size="sm" onClick={() => openEditAsset(a)}>
+                          <Pencil className="h-4 w-4" />
+                        </Button>
                         <Button
                           variant="ghost"
                           size="sm"
@@ -714,10 +845,16 @@ function AssetsTab() {
         </CardContent>
       </Card>
 
-      <Dialog open={formOpen} onOpenChange={setFormOpen}>
+      <Dialog
+        open={formOpen}
+        onOpenChange={(o) => {
+          setFormOpen(o);
+          if (!o) setEditingAssetId(null);
+        }}
+      >
         <DialogContent size="lg">
           <DialogHeader>
-            <DialogTitle>Add Asset</DialogTitle>
+            <DialogTitle>{editingAssetId ? 'Edit Asset' : 'Add Asset'}</DialogTitle>
             <DialogDescription>Furniture, electronics, lab equipment, or any other fixed asset.</DialogDescription>
           </DialogHeader>
           <form onSubmit={handleSubmit} className="space-y-4">
@@ -730,7 +867,11 @@ function AssetsTab() {
               </Field>
               {isUnrestricted && (
                 <Field label="School" required>
-                  <Select value={form.schoolId} onValueChange={(v) => setForm((f) => ({ ...f, schoolId: v, branchId: '' }))}>
+                  <Select
+                    value={form.schoolId}
+                    onValueChange={(v) => setForm((f) => ({ ...f, schoolId: v, branchId: '' }))}
+                    disabled={!!editingAssetId}
+                  >
                     <SelectTrigger>
                       <SelectValue placeholder="Select school" />
                     </SelectTrigger>
@@ -745,7 +886,11 @@ function AssetsTab() {
                 </Field>
               )}
               <Field label="Branch">
-                <Select value={form.branchId || '__none__'} onValueChange={(v) => setForm((f) => ({ ...f, branchId: v === '__none__' ? '' : v }))} disabled={!schoolBranches.length}>
+                <Select
+                  value={form.branchId || '__none__'}
+                  onValueChange={(v) => setForm((f) => ({ ...f, branchId: v === '__none__' ? '' : v }))}
+                  disabled={!!editingAssetId || !schoolBranches.length}
+                >
                   <SelectTrigger>
                     <SelectValue placeholder="Not specified" />
                   </SelectTrigger>
@@ -813,11 +958,18 @@ function AssetsTab() {
             )}
 
             <DialogFooter>
-              <Button type="button" variant="outline" onClick={() => setFormOpen(false)}>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => {
+                  setFormOpen(false);
+                  setEditingAssetId(null);
+                }}
+              >
                 Cancel
               </Button>
-              <Button type="submit" loading={createMutation.isPending}>
-                Add Asset
+              <Button type="submit" loading={editingAssetId ? updateMutation.isPending : createMutation.isPending}>
+                {editingAssetId ? 'Save Changes' : 'Add Asset'}
               </Button>
             </DialogFooter>
           </form>

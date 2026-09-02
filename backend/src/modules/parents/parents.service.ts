@@ -69,12 +69,33 @@ export class ParentsService {
   }
 
   async update(id: string, dto: UpdateParentDto, currentUser: ScopedUser) {
-    await this.findParentOrThrow(id, currentUser);
+    const parent = await this.findParentOrThrow(id, currentUser);
+
+    if (dto.email && dto.email !== parent.email) {
+      const existingEmail = await this.prisma.user.findUnique({ where: { email: dto.email } });
+      if (existingEmail) throw new ConflictException('A user with this email already exists');
+    }
+    if (dto.phone && dto.phone !== parent.phone) {
+      const existingPhone = await this.prisma.user.findUnique({ where: { phone: dto.phone } });
+      if (existingPhone) throw new ConflictException('A user with this phone number already exists');
+    }
+
     const updated = await this.prisma.user.update({
       where: { id },
-      data: { fullName: dto.fullName, phone: dto.phone },
+      data: { fullName: dto.fullName, email: dto.email, phone: dto.phone },
       include: CHILD_INCLUDE,
     });
+
+    await this.prisma.auditLog.create({
+      data: {
+        userId: currentUser.userId,
+        schoolId: parent.schoolId,
+        action: 'PARENT_UPDATED',
+        entity: 'User',
+        entityId: id,
+      },
+    });
+
     const { passwordHash, ...safe } = updated;
     return safe;
   }
@@ -83,8 +104,8 @@ export class ParentsService {
   // touch their children's own records or ParentStudent links (kept intact
   // in case the account is reactivated later).
   async remove(id: string, currentUser: ScopedUser) {
-    await this.findParentOrThrow(id, currentUser);
-    return this.prisma.$transaction(async (tx) => {
+    const parent = await this.findParentOrThrow(id, currentUser);
+    const safe = await this.prisma.$transaction(async (tx) => {
       const updated = await tx.user.update({
         where: { id },
         data: { isActive: false, deletedAt: new Date() },
@@ -93,9 +114,21 @@ export class ParentsService {
         where: { userId: id, revoked: false },
         data: { revoked: true },
       });
-      const { passwordHash, ...safe } = updated;
-      return safe;
+      const { passwordHash, ...rest } = updated;
+      return rest;
     });
+
+    await this.prisma.auditLog.create({
+      data: {
+        userId: currentUser.userId,
+        schoolId: parent.schoolId,
+        action: 'PARENT_DEACTIVATED',
+        entity: 'User',
+        entityId: id,
+      },
+    });
+
+    return safe;
   }
 
   async findAll(currentUser: ScopedUser, schoolId?: string) {

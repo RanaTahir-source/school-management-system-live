@@ -1,6 +1,6 @@
 import { FormEvent, useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { GraduationCap, Plus, Printer, Search, Upload, UserX } from 'lucide-react';
+import { GraduationCap, Pencil, Plus, Printer, Search, Upload, UserX } from 'lucide-react';
 import { api, ApiError } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
 import { BulkImportDialog } from '@/components/BulkImportDialog';
@@ -46,6 +46,7 @@ type FormState = {
   dateOfBirth: string;
   guardianName: string;
   guardianPhone: string;
+  guardianCnic: string;
   address: string;
 };
 
@@ -62,6 +63,7 @@ const EMPTY_FORM: FormState = {
   dateOfBirth: '',
   guardianName: '',
   guardianPhone: '',
+  guardianCnic: '',
   address: '',
 };
 
@@ -73,12 +75,13 @@ export default function StudentsPage() {
   const isUnrestricted = hasRole('DIRECTOR', 'ADMIN');
 
   const [search, setSearch] = useState('');
-  const [createOpen, setCreateOpen] = useState(false);
+  const [dialogOpen, setDialogOpen] = useState(false);
   const [bulkImportOpen, setBulkImportOpen] = useState(false);
   const [idCardBatchOpen, setIdCardBatchOpen] = useState(false);
   const [form, setForm] = useState<FormState>(EMPTY_FORM);
   const [formError, setFormError] = useState<string | null>(null);
   const [deactivateTarget, setDeactivateTarget] = useState<StudentProfile | null>(null);
+  const [editingStudentId, setEditingStudentId] = useState<string | null>(null);
 
   const studentsQuery = useQuery({
     queryKey: ['students'],
@@ -87,24 +90,38 @@ export default function StudentsPage() {
   const schoolsQuery = useQuery({
     queryKey: ['schools'],
     queryFn: () => api.get<School[]>('/schools'),
-    enabled: createOpen,
+    enabled: dialogOpen,
   });
   const classesQuery = useQuery({
     queryKey: ['classes'],
     queryFn: () => api.get<ClassRecord[]>('/classes'),
-    enabled: createOpen,
+    enabled: dialogOpen,
   });
   const sectionsQuery = useQuery({
     queryKey: ['sections', 'byClass', form.classId],
     queryFn: () => api.get<SectionRecord[]>('/sections', { classId: form.classId }),
-    enabled: createOpen && !!form.classId,
+    enabled: dialogOpen && !!form.classId,
   });
 
   const createMutation = useMutation({
     mutationFn: (payload: Record<string, unknown>) => api.post('/students', payload),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['students'] });
-      setCreateOpen(false);
+      setDialogOpen(false);
+      setForm(EMPTY_FORM);
+      setFormError(null);
+    },
+    onError: (err: unknown) => {
+      setFormError(err instanceof ApiError ? err.body?.message ?? err.message : 'Something went wrong');
+    },
+  });
+
+  const updateMutation = useMutation({
+    mutationFn: (payload: Record<string, unknown>) => api.patch(`/students/${editingStudentId}`, payload),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['students'] });
+      setDialogOpen(false);
+      setEditingStudentId(null);
       setForm(EMPTY_FORM);
       setFormError(null);
     },
@@ -146,14 +163,56 @@ export default function StudentsPage() {
   }, [classesQuery.data, form.schoolId, form.branchId, isUnrestricted, user?.schoolId]);
 
   function openCreate() {
+    setEditingStudentId(null);
     setForm({ ...EMPTY_FORM, schoolId: isUnrestricted ? '' : user?.schoolId ?? '' });
     setFormError(null);
-    setCreateOpen(true);
+    setDialogOpen(true);
+  }
+
+  function openEditDialog(s: StudentProfile) {
+    setEditingStudentId(s.id);
+    setForm({
+      ...EMPTY_FORM,
+      fullName: s.user.fullName,
+      email: s.user.email,
+      admissionNo: s.admissionNo,
+      schoolId: s.user.schoolId ?? (isUnrestricted ? '' : user?.schoolId ?? ''),
+      branchId: '',
+      classId: s.section?.class?.id ?? '',
+      sectionId: s.section?.id ?? '',
+      gender: s.gender ?? '',
+      dateOfBirth: s.dateOfBirth ? s.dateOfBirth.slice(0, 10) : '',
+      guardianName: s.guardianName ?? '',
+      guardianPhone: s.guardianPhone ?? '',
+      guardianCnic: s.guardianCnic ?? '',
+      address: s.address ?? '',
+    });
+    setFormError(null);
+    setDialogOpen(true);
   }
 
   function handleSubmit(e: FormEvent) {
     e.preventDefault();
     setFormError(null);
+
+    if (editingStudentId) {
+      if (!form.admissionNo || !form.fullName) {
+        setFormError('Please fill all required fields.');
+        return;
+      }
+      updateMutation.mutate({
+        fullName: form.fullName,
+        admissionNo: form.admissionNo,
+        sectionId: form.sectionId || undefined,
+        gender: form.gender || undefined,
+        dateOfBirth: form.dateOfBirth || undefined,
+        guardianName: form.guardianName || undefined,
+        guardianPhone: form.guardianPhone || undefined,
+        guardianCnic: form.guardianCnic || undefined,
+        address: form.address || undefined,
+      });
+      return;
+    }
 
     const effectiveSchoolId = isUnrestricted ? form.schoolId : user?.schoolId;
     if (!effectiveSchoolId) {
@@ -177,6 +236,7 @@ export default function StudentsPage() {
       dateOfBirth: form.dateOfBirth || undefined,
       guardianName: form.guardianName || undefined,
       guardianPhone: form.guardianPhone || undefined,
+      guardianCnic: form.guardianCnic || undefined,
       address: form.address || undefined,
     });
   }
@@ -280,6 +340,10 @@ export default function StudentsPage() {
                             id={s.id}
                             onUploaded={() => queryClient.invalidateQueries({ queryKey: ['students'] })}
                           />
+                          <Button variant="ghost" size="sm" onClick={() => openEditDialog(s)}>
+                            <Pencil className="h-4 w-4" />
+                            Edit
+                          </Button>
                           {canDeactivate && s.isActive && (
                             <Button
                               variant="ghost"
@@ -302,11 +366,21 @@ export default function StudentsPage() {
         </CardContent>
       </Card>
 
-      <Dialog open={createOpen} onOpenChange={setCreateOpen}>
+      <Dialog
+        open={dialogOpen}
+        onOpenChange={(open) => {
+          setDialogOpen(open);
+          if (!open) setEditingStudentId(null);
+        }}
+      >
         <DialogContent size="lg">
           <DialogHeader>
-            <DialogTitle>Add Student</DialogTitle>
-            <DialogDescription>Creates a login account and student profile in one step.</DialogDescription>
+            <DialogTitle>{editingStudentId ? 'Edit Student' : 'Add Student'}</DialogTitle>
+            <DialogDescription>
+              {editingStudentId
+                ? "Update this student's profile, guardian info, and class/section."
+                : 'Creates a login account and student profile in one step.'}
+            </DialogDescription>
           </DialogHeader>
 
           <form onSubmit={handleSubmit} className="space-y-4">
@@ -325,28 +399,33 @@ export default function StudentsPage() {
                   required
                 />
               </Field>
-              <Field label="Email" required>
-                <Input
-                  type="email"
-                  value={form.email}
-                  onChange={(e) => setForm((f) => ({ ...f, email: e.target.value }))}
-                  required
-                />
-              </Field>
-              <Field label="Password" required>
-                <PasswordInput
-                  minLength={8}
-                  value={form.password}
-                  onChange={(e) => setForm((f) => ({ ...f, password: e.target.value }))}
-                  required
-                />
-              </Field>
+              {!editingStudentId && (
+                <>
+                  <Field label="Email" required>
+                    <Input
+                      type="email"
+                      value={form.email}
+                      onChange={(e) => setForm((f) => ({ ...f, email: e.target.value }))}
+                      required
+                    />
+                  </Field>
+                  <Field label="Password" required>
+                    <PasswordInput
+                      minLength={8}
+                      value={form.password}
+                      onChange={(e) => setForm((f) => ({ ...f, password: e.target.value }))}
+                      required
+                    />
+                  </Field>
+                </>
+              )}
 
               {isUnrestricted && (
                 <Field label="School" required>
                   <Select
                     value={form.schoolId}
                     onValueChange={(v) => setForm((f) => ({ ...f, schoolId: v, branchId: '', classId: '', sectionId: '' }))}
+                    disabled={!!editingStudentId}
                   >
                     <SelectTrigger>
                       <SelectValue placeholder="Select school" />
@@ -362,24 +441,26 @@ export default function StudentsPage() {
                 </Field>
               )}
 
-              <Field label="Branch" required>
-                <Select
-                  value={form.branchId}
-                  onValueChange={(v) => setForm((f) => ({ ...f, branchId: v, classId: '', sectionId: '' }))}
-                  disabled={!schoolBranches.length}
-                >
-                  <SelectTrigger>
-                    <SelectValue placeholder="Select branch" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {schoolBranches.map((b) => (
-                      <SelectItem key={b.id} value={b.id}>
-                        {b.name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </Field>
+              {!editingStudentId && (
+                <Field label="Branch" required>
+                  <Select
+                    value={form.branchId}
+                    onValueChange={(v) => setForm((f) => ({ ...f, branchId: v, classId: '', sectionId: '' }))}
+                    disabled={!schoolBranches.length}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select branch" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {schoolBranches.map((b) => (
+                        <SelectItem key={b.id} value={b.id}>
+                          {b.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </Field>
+              )}
 
               <Field label="Class">
                 <Select
@@ -450,6 +531,12 @@ export default function StudentsPage() {
                   onChange={(e) => setForm((f) => ({ ...f, guardianPhone: e.target.value }))}
                 />
               </Field>
+              <Field label="Guardian CNIC">
+                <Input
+                  value={form.guardianCnic}
+                  onChange={(e) => setForm((f) => ({ ...f, guardianCnic: e.target.value }))}
+                />
+              </Field>
               <Field label="Address" className="sm:col-span-2">
                 <Input value={form.address} onChange={(e) => setForm((f) => ({ ...f, address: e.target.value }))} />
               </Field>
@@ -462,11 +549,18 @@ export default function StudentsPage() {
             )}
 
             <DialogFooter>
-              <Button type="button" variant="outline" onClick={() => setCreateOpen(false)}>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => {
+                  setDialogOpen(false);
+                  setEditingStudentId(null);
+                }}
+              >
                 Cancel
               </Button>
-              <Button type="submit" loading={createMutation.isPending}>
-                Create Student
+              <Button type="submit" loading={editingStudentId ? updateMutation.isPending : createMutation.isPending}>
+                {editingStudentId ? 'Save Changes' : 'Create Student'}
               </Button>
             </DialogFooter>
           </form>

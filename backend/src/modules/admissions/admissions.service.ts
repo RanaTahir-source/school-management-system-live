@@ -170,9 +170,21 @@ export class AdmissionsService {
 
   // Mistaken/duplicate entries only - genuine "didn't proceed" leads should
   // be marked REJECTED/LOST via update() instead, so their history is kept.
-  async remove(id: string, currentUser: ScopedUser) {
-    await this.findOne(id, currentUser);
-    return this.prisma.admissionEnquiry.update({ where: { id }, data: { deletedAt: new Date() } });
+  async remove(id: string, currentUser: ScopedUser & { userId: string }) {
+    const enquiry = await this.findOne(id, currentUser);
+    const removed = await this.prisma.admissionEnquiry.update({ where: { id }, data: { deletedAt: new Date() } });
+
+    await this.prisma.auditLog.create({
+      data: {
+        userId: currentUser.userId,
+        schoolId: enquiry.schoolId,
+        action: 'ADMISSION_ENQUIRY_DELETED',
+        entity: 'AdmissionEnquiry',
+        entityId: id,
+      },
+    });
+
+    return removed;
   }
 
   // Appends to the timestamped follow-up log (never overwrites), and bumps

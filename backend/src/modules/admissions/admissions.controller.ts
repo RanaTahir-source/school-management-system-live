@@ -74,7 +74,7 @@ export class AdmissionsController {
   @Delete('enquiries/:id')
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles('DIRECTOR', 'ADMIN')
-  remove(@Param('id') id: string, @CurrentUser() user: ScopedUser) {
+  remove(@Param('id') id: string, @CurrentUser() user: Requester) {
     return this.service.remove(id, user);
   }
 

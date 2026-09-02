@@ -110,15 +110,60 @@ export class MeetingsService {
   }
 
   async update(id: string, dto: UpdateMeetingDto, currentUser: ScopedUser) {
-    await this.findOne(id, currentUser);
-    return this.prisma.meeting.update({
+    const existing = await this.findOne(id, currentUser);
+
+    // attendeeIds, when present, is a full replacement of the attendee list
+    // (the "Edit Details" flow) - diffed against the current roster so we
+    // only touch what actually changed, and only notify people newly added.
+    const { attendeeIds, ...rest } = dto;
+    let newlyAddedIds: string[] = [];
+
+    if (attendeeIds) {
+      const desiredIds = Array.from(new Set(attendeeIds));
+      const currentIds = existing.attendees.map((a) => a.userId);
+      newlyAddedIds = desiredIds.filter((uid) => !currentIds.includes(uid));
+      const removedIds = currentIds.filter((uid) => !desiredIds.includes(uid));
+
+      if (removedIds.length) {
+        await this.prisma.meetingAttendee.deleteMany({ where: { meetingId: id, userId: { in: removedIds } } });
+      }
+      if (newlyAddedIds.length) {
+        await this.prisma.meetingAttendee.createMany({
+          data: newlyAddedIds.map((userId) => ({ meetingId: id, userId })),
+          skipDuplicates: true,
+        });
+      }
+    }
+
+    const meeting = await this.prisma.meeting.update({
       where: { id },
       data: {
-        ...dto,
-        scheduledAt: dto.scheduledAt ? new Date(dto.scheduledAt) : undefined,
+        ...rest,
+        scheduledAt: rest.scheduledAt ? new Date(rest.scheduledAt) : undefined,
       },
       include: this.include,
     });
+
+    if (newlyAddedIds.length) {
+      await this.notifyAttendees(
+        id,
+        `Meeting updated: ${meeting.title}`,
+        `${new Date(meeting.scheduledAt).toLocaleString()}${meeting.location ? ` · ${meeting.location}` : ''}`,
+        newlyAddedIds,
+      );
+    }
+
+    await this.prisma.auditLog.create({
+      data: {
+        userId: currentUser.userId,
+        schoolId: meeting.schoolId,
+        action: 'MEETING_UPDATED',
+        entity: 'Meeting',
+        entityId: id,
+      },
+    });
+
+    return this.findOne(id, currentUser);
   }
 
   async remove(id: string, currentUser: ScopedUser) {

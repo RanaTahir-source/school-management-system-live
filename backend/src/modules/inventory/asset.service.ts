@@ -73,8 +73,8 @@ export class AssetService {
   }
 
   async update(id: string, dto: UpdateAssetDto, currentUser: ScopedUser) {
-    await this.findOne(id, currentUser);
-    return this.prisma.asset.update({
+    const existing = await this.findOne(id, currentUser);
+    const updated = await this.prisma.asset.update({
       where: { id },
       data: {
         ...dto,
@@ -84,6 +84,18 @@ export class AssetService {
       },
       include: ASSET_INCLUDE,
     });
+
+    await this.prisma.auditLog.create({
+      data: {
+        userId: currentUser.userId,
+        schoolId: existing.schoolId,
+        action: 'ASSET_UPDATED',
+        entity: 'Asset',
+        entityId: id,
+      },
+    });
+
+    return updated;
   }
 
   async remove(id: string, currentUser: ScopedUser) {

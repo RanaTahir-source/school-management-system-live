@@ -1,6 +1,6 @@
 import { FormEvent, useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Plus, Search, ShieldCheck, UserX, KeyRound } from 'lucide-react';
+import { Plus, Search, ShieldCheck, UserX, KeyRound, Pencil } from 'lucide-react';
 import { api, ApiError } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
 import { Card, CardContent } from '@/components/ui/card';
@@ -78,6 +78,22 @@ const EMPTY_FORM: FormState = {
   branchId: '',
 };
 
+type EditFormState = {
+  fullName: string;
+  email: string;
+  phone: string;
+  schoolId: string;
+  branchId: string;
+};
+
+const EMPTY_EDIT_FORM: EditFormState = {
+  fullName: '',
+  email: '',
+  phone: '',
+  schoolId: '',
+  branchId: '',
+};
+
 export default function StaffUsersPage() {
   const { user, hasRole } = useAuth();
   const queryClient = useQueryClient();
@@ -89,12 +105,15 @@ export default function StaffUsersPage() {
   const [form, setForm] = useState<FormState>(EMPTY_FORM);
   const [formError, setFormError] = useState<string | null>(null);
   const [deactivateTarget, setDeactivateTarget] = useState<StaffUser | null>(null);
+  const [editingUserId, setEditingUserId] = useState<string | null>(null);
+  const [editForm, setEditForm] = useState<EditFormState>(EMPTY_EDIT_FORM);
+  const [editError, setEditError] = useState<string | null>(null);
 
   const usersQuery = useQuery({ queryKey: ['users'], queryFn: () => api.get<StaffUser[]>('/users') });
   const schoolsQuery = useQuery({
     queryKey: ['schools'],
     queryFn: () => api.get<School[]>('/schools'),
-    enabled: createOpen,
+    enabled: createOpen || !!editingUserId,
   });
 
   const createMutation = useMutation({
@@ -107,6 +126,19 @@ export default function StaffUsersPage() {
     },
     onError: (err: unknown) => {
       setFormError(err instanceof ApiError ? err.body?.message ?? err.message : 'Something went wrong');
+    },
+  });
+
+  const updateProfileMutation = useMutation({
+    mutationFn: ({ id, payload }: { id: string; payload: Record<string, unknown> }) => api.patch(`/users/${id}`, payload),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['users'] });
+      setEditingUserId(null);
+      setEditForm(EMPTY_EDIT_FORM);
+      setEditError(null);
+    },
+    onError: (err: unknown) => {
+      setEditError(err instanceof ApiError ? err.body?.message ?? err.message : 'Something went wrong');
     },
   });
 
@@ -170,6 +202,43 @@ export default function StaffUsersPage() {
     const school = schoolsQuery.data?.find((s) => s.id === form.schoolId);
     return school?.branches ?? [];
   }, [schoolsQuery.data, form.schoolId]);
+
+  const editFormSchoolBranches = useMemo(() => {
+    const school = schoolsQuery.data?.find((s) => s.id === editForm.schoolId);
+    return school?.branches ?? [];
+  }, [schoolsQuery.data, editForm.schoolId]);
+
+  function openEditDialog(u: StaffUser) {
+    setEditingUserId(u.id);
+    setEditForm({
+      fullName: u.fullName,
+      email: u.email,
+      phone: u.phone ?? '',
+      schoolId: u.schoolId ?? '',
+      branchId: u.branchId ?? '',
+    });
+    setEditError(null);
+  }
+
+  function handleEditSubmit(e: FormEvent) {
+    e.preventDefault();
+    setEditError(null);
+    if (!editingUserId) return;
+    if (!editForm.fullName || !editForm.email) {
+      setEditError('Please fill all required fields.');
+      return;
+    }
+    updateProfileMutation.mutate({
+      id: editingUserId,
+      payload: {
+        fullName: editForm.fullName,
+        email: editForm.email,
+        phone: editForm.phone || undefined,
+        schoolId: isUnrestricted ? editForm.schoolId || undefined : undefined,
+        branchId: editForm.branchId || undefined,
+      },
+    });
+  }
 
   function openCreate() {
     setForm({ ...EMPTY_FORM, schoolId: isUnrestricted ? '' : user?.schoolId ?? '' });
@@ -282,6 +351,10 @@ export default function StaffUsersPage() {
                     {canManage && (
                       <TableCell className="text-right">
                         <div className="flex justify-end gap-1">
+                          <Button variant="ghost" size="sm" onClick={() => openEditDialog(u)}>
+                            <Pencil className="h-4 w-4" />
+                            Edit
+                          </Button>
                           {u.id !== user?.userId && (
                             <Button variant="ghost" size="sm" onClick={() => openRolesDialog(u)}>
                               <KeyRound className="h-4 w-4" />
@@ -414,6 +487,101 @@ export default function StaffUsersPage() {
               </Button>
               <Button type="submit" loading={createMutation.isPending}>
                 Create Account
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={!!editingUserId}
+        onOpenChange={(open) => {
+          if (!open) {
+            setEditingUserId(null);
+            setEditForm(EMPTY_EDIT_FORM);
+            setEditError(null);
+          }
+        }}
+      >
+        <DialogContent size="lg">
+          <DialogHeader>
+            <DialogTitle>Edit Staff Account</DialogTitle>
+            <DialogDescription>Update this staff member's profile details.</DialogDescription>
+          </DialogHeader>
+
+          <form onSubmit={handleEditSubmit} className="space-y-4">
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+              <Field label="Full name" required>
+                <Input
+                  value={editForm.fullName}
+                  onChange={(e) => setEditForm((f) => ({ ...f, fullName: e.target.value }))}
+                  required
+                />
+              </Field>
+              <Field label="Email" required>
+                <Input
+                  type="email"
+                  value={editForm.email}
+                  onChange={(e) => setEditForm((f) => ({ ...f, email: e.target.value }))}
+                  required
+                />
+              </Field>
+              <Field label="Phone">
+                <Input value={editForm.phone} onChange={(e) => setEditForm((f) => ({ ...f, phone: e.target.value }))} />
+              </Field>
+
+              {isUnrestricted && (
+                <Field label="School">
+                  <Select
+                    value={editForm.schoolId}
+                    onValueChange={(v) => setEditForm((f) => ({ ...f, schoolId: v, branchId: '' }))}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select school (optional)" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {(schoolsQuery.data ?? []).map((s) => (
+                        <SelectItem key={s.id} value={s.id}>
+                          {s.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </Field>
+              )}
+
+              <Field label="Branch">
+                <Select
+                  value={editForm.branchId}
+                  onValueChange={(v) => setEditForm((f) => ({ ...f, branchId: v }))}
+                  disabled={!editFormSchoolBranches.length}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select branch (optional)" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {editFormSchoolBranches.map((b) => (
+                      <SelectItem key={b.id} value={b.id}>
+                        {b.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </Field>
+            </div>
+
+            {editError && (
+              <div className="rounded-lg border border-destructive/20 bg-destructive/5 px-3 py-2 text-sm text-destructive">
+                {editError}
+              </div>
+            )}
+
+            <DialogFooter>
+              <Button type="button" variant="outline" onClick={() => setEditingUserId(null)}>
+                Cancel
+              </Button>
+              <Button type="submit" loading={updateProfileMutation.isPending}>
+                Save Changes
               </Button>
             </DialogFooter>
           </form>

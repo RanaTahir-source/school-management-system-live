@@ -72,8 +72,20 @@ export class InventoryService {
   }
 
   async updateItem(id: string, dto: UpdateInventoryItemDto, currentUser: ScopedUser) {
-    await this.findOneItem(id, currentUser);
-    return this.prisma.inventoryItem.update({ where: { id }, data: dto });
+    const existing = await this.findOneItem(id, currentUser);
+    const updated = await this.prisma.inventoryItem.update({ where: { id }, data: dto });
+
+    await this.prisma.auditLog.create({
+      data: {
+        userId: currentUser.userId,
+        schoolId: existing.schoolId,
+        action: 'INVENTORY_ITEM_UPDATED',
+        entity: 'InventoryItem',
+        entityId: id,
+      },
+    });
+
+    return updated;
   }
 
   async removeItem(id: string, currentUser: ScopedUser) {

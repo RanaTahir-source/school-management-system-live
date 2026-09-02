@@ -1,6 +1,6 @@
 import { FormEvent, useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { BookOpen, CalendarDays, ClipboardList, Download, Eye, Plus, Save, Trash2, Trophy } from 'lucide-react';
+import { BookOpen, CalendarDays, ClipboardList, Download, Eye, Pencil, Plus, Save, Trash2, Trophy } from 'lucide-react';
 import { api, ApiError } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
@@ -96,6 +96,7 @@ export default function ExamsPage() {
   const [subjectOpen, setSubjectOpen] = useState(false);
   const [subjectForm, setSubjectForm] = useState({ schoolId: '', name: '', code: '' });
   const [subjectError, setSubjectError] = useState<string | null>(null);
+  const [editingSubjectId, setEditingSubjectId] = useState<string | null>(null);
   const [deactivateSubject, setDeactivateSubject] = useState<Subject | null>(null);
 
   const createSubject = useMutation({
@@ -103,6 +104,19 @@ export default function ExamsPage() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['subjects'] });
       setSubjectOpen(false);
+      setSubjectForm({ schoolId: '', name: '', code: '' });
+      setSubjectError(null);
+    },
+    onError: (err: unknown) =>
+      setSubjectError(err instanceof ApiError ? err.body?.message ?? err.message : 'Something went wrong'),
+  });
+
+  const updateSubject = useMutation({
+    mutationFn: (payload: Record<string, unknown>) => api.patch(`/subjects/${editingSubjectId}`, payload),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['subjects'] });
+      setSubjectOpen(false);
+      setEditingSubjectId(null);
       setSubjectForm({ schoolId: '', name: '', code: '' });
       setSubjectError(null);
     },
@@ -119,13 +133,28 @@ export default function ExamsPage() {
   });
 
   function openSubjectDialog() {
+    setEditingSubjectId(null);
     setSubjectForm({ schoolId: isUnrestricted ? '' : user?.schoolId ?? '', name: '', code: '' });
+    setSubjectError(null);
+    setSubjectOpen(true);
+  }
+  function openEditSubjectDialog(s: Subject) {
+    setEditingSubjectId(s.id);
+    setSubjectForm({ schoolId: s.schoolId, name: s.name, code: s.code ?? '' });
     setSubjectError(null);
     setSubjectOpen(true);
   }
   function submitSubject(e: FormEvent) {
     e.preventDefault();
     setSubjectError(null);
+    if (editingSubjectId) {
+      if (!subjectForm.name) {
+        setSubjectError('Please fill all required fields.');
+        return;
+      }
+      updateSubject.mutate({ name: subjectForm.name, code: subjectForm.code || undefined });
+      return;
+    }
     const effectiveSchoolId = isUnrestricted ? subjectForm.schoolId : user?.schoolId;
     if (!effectiveSchoolId || !subjectForm.name) {
       setSubjectError('Please fill all required fields.');
@@ -138,6 +167,7 @@ export default function ExamsPage() {
   const [examOpen, setExamOpen] = useState(false);
   const [examForm, setExamForm] = useState({ schoolId: '', academicYearId: '', name: '', startDate: '', endDate: '' });
   const [examError, setExamError] = useState<string | null>(null);
+  const [editingExamId, setEditingExamId] = useState<string | null>(null);
   const [deleteExam, setDeleteExam] = useState<Exam | null>(null);
   const [managePapersExam, setManagePapersExam] = useState<Exam | null>(null);
 
@@ -146,6 +176,18 @@ export default function ExamsPage() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['exams'] });
       setExamOpen(false);
+      setExamForm({ schoolId: '', academicYearId: '', name: '', startDate: '', endDate: '' });
+      setExamError(null);
+    },
+    onError: (err: unknown) => setExamError(err instanceof ApiError ? err.body?.message ?? err.message : 'Something went wrong'),
+  });
+
+  const updateExam = useMutation({
+    mutationFn: (payload: Record<string, unknown>) => api.patch(`/exams/${editingExamId}`, payload),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['exams'] });
+      setExamOpen(false);
+      setEditingExamId(null);
       setExamForm({ schoolId: '', academicYearId: '', name: '', startDate: '', endDate: '' });
       setExamError(null);
     },
@@ -166,13 +208,39 @@ export default function ExamsPage() {
   }, [yearsQuery.data, examForm.schoolId, isUnrestricted, user?.schoolId]);
 
   function openExamDialog() {
+    setEditingExamId(null);
     setExamForm({ schoolId: isUnrestricted ? '' : user?.schoolId ?? '', academicYearId: '', name: '', startDate: '', endDate: '' });
+    setExamError(null);
+    setExamOpen(true);
+  }
+  function openEditExamDialog(ex: Exam) {
+    setEditingExamId(ex.id);
+    setExamForm({
+      schoolId: ex.schoolId,
+      academicYearId: ex.academicYearId,
+      name: ex.name,
+      startDate: ex.startDate.slice(0, 10),
+      endDate: ex.endDate.slice(0, 10),
+    });
     setExamError(null);
     setExamOpen(true);
   }
   function submitExam(e: FormEvent) {
     e.preventDefault();
     setExamError(null);
+    if (editingExamId) {
+      if (!examForm.academicYearId || !examForm.name || !examForm.startDate || !examForm.endDate) {
+        setExamError('Please fill all required fields.');
+        return;
+      }
+      updateExam.mutate({
+        academicYearId: examForm.academicYearId,
+        name: examForm.name,
+        startDate: examForm.startDate,
+        endDate: examForm.endDate,
+      });
+      return;
+    }
     const effectiveSchoolId = isUnrestricted ? examForm.schoolId : user?.schoolId;
     if (!effectiveSchoolId || !examForm.academicYearId || !examForm.name || !examForm.startDate || !examForm.endDate) {
       setExamError('Please fill all required fields.');
@@ -196,6 +264,7 @@ export default function ExamsPage() {
 
   const [paperForm, setPaperForm] = useState({ classId: '', subjectId: '', maxMarks: '', passingMarks: '', examDate: '' });
   const [paperError, setPaperError] = useState<string | null>(null);
+  const [editingPaperId, setEditingPaperId] = useState<string | null>(null);
   const [removePaperTarget, setRemovePaperTarget] = useState<ExamSubject | null>(null);
   const [removePaperError, setRemovePaperError] = useState<string | null>(null);
 
@@ -204,6 +273,17 @@ export default function ExamsPage() {
       api.post(`/exams/${managePapersExam!.id}/subjects`, payload),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['exam-subjects', managePapersExam?.id] });
+      setPaperForm({ classId: '', subjectId: '', maxMarks: '', passingMarks: '', examDate: '' });
+      setPaperError(null);
+    },
+    onError: (err: unknown) => setPaperError(err instanceof ApiError ? err.body?.message ?? err.message : 'Something went wrong'),
+  });
+
+  const updatePaper = useMutation({
+    mutationFn: (payload: Record<string, unknown>) => api.patch(`/exams/subjects/${editingPaperId}`, payload),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['exam-subjects', managePapersExam?.id] });
+      setEditingPaperId(null);
       setPaperForm({ classId: '', subjectId: '', maxMarks: '', passingMarks: '', examDate: '' });
       setPaperError(null);
     },
@@ -234,14 +314,43 @@ export default function ExamsPage() {
 
   function openPapersDialog(exam: Exam) {
     setManagePapersExam(exam);
+    setEditingPaperId(null);
     setPaperForm({ classId: '', subjectId: '', maxMarks: '', passingMarks: '', examDate: '' });
     setPaperError(null);
     setRemovePaperError(null);
   }
+  function openEditPaperDialog(p: ExamSubject) {
+    setEditingPaperId(p.id);
+    setPaperForm({
+      classId: p.classId,
+      subjectId: p.subjectId,
+      maxMarks: String(p.maxMarks),
+      passingMarks: String(p.passingMarks),
+      examDate: p.examDate ? p.examDate.slice(0, 10) : '',
+    });
+    setPaperError(null);
+  }
+  function cancelPaperEdit() {
+    setEditingPaperId(null);
+    setPaperForm({ classId: '', subjectId: '', maxMarks: '', passingMarks: '', examDate: '' });
+    setPaperError(null);
+  }
   function submitPaper(e: FormEvent) {
     e.preventDefault();
     setPaperError(null);
-    if (!paperForm.classId || !paperForm.subjectId || !paperForm.maxMarks || !paperForm.passingMarks) {
+    if (!paperForm.maxMarks || !paperForm.passingMarks) {
+      setPaperError('Please fill all required fields.');
+      return;
+    }
+    if (editingPaperId) {
+      updatePaper.mutate({
+        maxMarks: Number(paperForm.maxMarks),
+        passingMarks: Number(paperForm.passingMarks),
+        examDate: paperForm.examDate || undefined,
+      });
+      return;
+    }
+    if (!paperForm.classId || !paperForm.subjectId) {
       setPaperError('Please fill all required fields.');
       return;
     }
@@ -372,7 +481,7 @@ export default function ExamsPage() {
                       <TableHead>Code</TableHead>
                       <TableHead>School</TableHead>
                       <TableHead>Status</TableHead>
-                      {canDelete && <TableHead className="text-right">Actions</TableHead>}
+                      {(canManage || canDelete) && <TableHead className="text-right">Actions</TableHead>}
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -384,19 +493,26 @@ export default function ExamsPage() {
                         <TableCell>
                           <Badge variant={s.isActive ? 'success' : 'secondary'}>{s.isActive ? 'Active' : 'Inactive'}</Badge>
                         </TableCell>
-                        {canDelete && (
+                        {(canManage || canDelete) && (
                           <TableCell className="text-right">
-                            {s.isActive && (
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                className="text-destructive hover:bg-destructive/10 hover:text-destructive"
-                                onClick={() => setDeactivateSubject(s)}
-                              >
-                                <Trash2 className="h-4 w-4" />
-                                Deactivate
-                              </Button>
-                            )}
+                            <div className="flex justify-end gap-1">
+                              {canManage && (
+                                <Button variant="ghost" size="sm" onClick={() => openEditSubjectDialog(s)}>
+                                  <Pencil className="h-4 w-4" />
+                                </Button>
+                              )}
+                              {canDelete && s.isActive && (
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  className="text-destructive hover:bg-destructive/10 hover:text-destructive"
+                                  onClick={() => setDeactivateSubject(s)}
+                                >
+                                  <Trash2 className="h-4 w-4" />
+                                  Deactivate
+                                </Button>
+                              )}
+                            </div>
                           </TableCell>
                         )}
                       </TableRow>
@@ -454,6 +570,11 @@ export default function ExamsPage() {
                               <Button variant="ghost" size="sm" onClick={() => openPapersDialog(ex)}>
                                 <ClipboardList className="h-4 w-4" />
                                 Manage Papers
+                              </Button>
+                            )}
+                            {canManage && (
+                              <Button variant="ghost" size="sm" onClick={() => openEditExamDialog(ex)}>
+                                <Pencil className="h-4 w-4" />
                               </Button>
                             )}
                             {canDelete && (
@@ -756,16 +877,28 @@ export default function ExamsPage() {
       </Tabs>
 
       {/* Subject dialog */}
-      <Dialog open={subjectOpen} onOpenChange={setSubjectOpen}>
+      <Dialog
+        open={subjectOpen}
+        onOpenChange={(open) => {
+          setSubjectOpen(open);
+          if (!open) setEditingSubjectId(null);
+        }}
+      >
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Add Subject</DialogTitle>
-            <DialogDescription>Create a subject for a school, used across exams.</DialogDescription>
+            <DialogTitle>{editingSubjectId ? 'Edit Subject' : 'Add Subject'}</DialogTitle>
+            <DialogDescription>
+              {editingSubjectId ? "Update this subject's name or code." : 'Create a subject for a school, used across exams.'}
+            </DialogDescription>
           </DialogHeader>
           <form onSubmit={submitSubject} className="space-y-4">
             {isUnrestricted && (
               <Field label="School" required>
-                <Select value={subjectForm.schoolId} onValueChange={(v) => setSubjectForm((f) => ({ ...f, schoolId: v }))}>
+                <Select
+                  value={subjectForm.schoolId}
+                  onValueChange={(v) => setSubjectForm((f) => ({ ...f, schoolId: v }))}
+                  disabled={!!editingSubjectId}
+                >
                   <SelectTrigger>
                     <SelectValue placeholder="Select school" />
                   </SelectTrigger>
@@ -800,11 +933,18 @@ export default function ExamsPage() {
               </div>
             )}
             <DialogFooter>
-              <Button type="button" variant="outline" onClick={() => setSubjectOpen(false)}>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => {
+                  setSubjectOpen(false);
+                  setEditingSubjectId(null);
+                }}
+              >
                 Cancel
               </Button>
-              <Button type="submit" loading={createSubject.isPending}>
-                Create
+              <Button type="submit" loading={editingSubjectId ? updateSubject.isPending : createSubject.isPending}>
+                {editingSubjectId ? 'Save Changes' : 'Create'}
               </Button>
             </DialogFooter>
           </form>
@@ -812,11 +952,19 @@ export default function ExamsPage() {
       </Dialog>
 
       {/* Exam dialog */}
-      <Dialog open={examOpen} onOpenChange={setExamOpen}>
+      <Dialog
+        open={examOpen}
+        onOpenChange={(open) => {
+          setExamOpen(open);
+          if (!open) setEditingExamId(null);
+        }}
+      >
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Add Exam</DialogTitle>
-            <DialogDescription>Create an exam within an academic year.</DialogDescription>
+            <DialogTitle>{editingExamId ? 'Edit Exam' : 'Add Exam'}</DialogTitle>
+            <DialogDescription>
+              {editingExamId ? "Update this exam's academic year, name or dates." : 'Create an exam within an academic year.'}
+            </DialogDescription>
           </DialogHeader>
           <form onSubmit={submitExam} className="space-y-4">
             {isUnrestricted && (
@@ -824,6 +972,7 @@ export default function ExamsPage() {
                 <Select
                   value={examForm.schoolId}
                   onValueChange={(v) => setExamForm((f) => ({ ...f, schoolId: v, academicYearId: '' }))}
+                  disabled={!!editingExamId}
                 >
                   <SelectTrigger>
                     <SelectValue placeholder="Select school" />
@@ -888,11 +1037,18 @@ export default function ExamsPage() {
               </div>
             )}
             <DialogFooter>
-              <Button type="button" variant="outline" onClick={() => setExamOpen(false)}>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => {
+                  setExamOpen(false);
+                  setEditingExamId(null);
+                }}
+              >
                 Cancel
               </Button>
-              <Button type="submit" loading={createExam.isPending}>
-                Create
+              <Button type="submit" loading={editingExamId ? updateExam.isPending : createExam.isPending}>
+                {editingExamId ? 'Save Changes' : 'Create'}
               </Button>
             </DialogFooter>
           </form>
@@ -925,7 +1081,7 @@ export default function ExamsPage() {
                     <TableHead>Max</TableHead>
                     <TableHead>Passing</TableHead>
                     <TableHead>Date</TableHead>
-                    {canDelete && <TableHead className="text-right">Actions</TableHead>}
+                    {(canManage || canDelete) && <TableHead className="text-right">Actions</TableHead>}
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -936,16 +1092,25 @@ export default function ExamsPage() {
                       <TableCell className="tabular-nums text-muted-foreground">{p.maxMarks}</TableCell>
                       <TableCell className="tabular-nums text-muted-foreground">{p.passingMarks}</TableCell>
                       <TableCell className="text-muted-foreground">{p.examDate ? formatDate(p.examDate) : '—'}</TableCell>
-                      {canDelete && (
+                      {(canManage || canDelete) && (
                         <TableCell className="text-right">
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            className="text-destructive hover:bg-destructive/10 hover:text-destructive"
-                            onClick={() => setRemovePaperTarget(p)}
-                          >
-                            <Trash2 className="h-4 w-4" />
-                          </Button>
+                          <div className="flex justify-end gap-1">
+                            {canManage && (
+                              <Button variant="ghost" size="sm" onClick={() => openEditPaperDialog(p)}>
+                                <Pencil className="h-4 w-4" />
+                              </Button>
+                            )}
+                            {canDelete && (
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                className="text-destructive hover:bg-destructive/10 hover:text-destructive"
+                                onClick={() => setRemovePaperTarget(p)}
+                              >
+                                <Trash2 className="h-4 w-4" />
+                              </Button>
+                            )}
+                          </div>
                         </TableCell>
                       )}
                     </TableRow>
@@ -956,13 +1121,13 @@ export default function ExamsPage() {
 
             {canManage && (
               <form onSubmit={submitPaper} className="space-y-4 border-t border-border pt-4">
-                <p className="text-sm font-medium text-foreground">Add a paper</p>
+                <p className="text-sm font-medium text-foreground">{editingPaperId ? 'Edit paper' : 'Add a paper'}</p>
                 <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                   <Field label="Class" required>
                     <Select
                       value={paperForm.classId}
                       onValueChange={(v) => setPaperForm((f) => ({ ...f, classId: v }))}
-                      disabled={!paperClassOptions.length}
+                      disabled={!!editingPaperId || !paperClassOptions.length}
                     >
                       <SelectTrigger>
                         <SelectValue placeholder="Select class" />
@@ -980,7 +1145,7 @@ export default function ExamsPage() {
                     <Select
                       value={paperForm.subjectId}
                       onValueChange={(v) => setPaperForm((f) => ({ ...f, subjectId: v }))}
-                      disabled={!paperSubjectOptions.length}
+                      disabled={!!editingPaperId || !paperSubjectOptions.length}
                     >
                       <SelectTrigger>
                         <SelectValue placeholder="Select subject" />
@@ -1030,10 +1195,24 @@ export default function ExamsPage() {
                     {removePaperError}
                   </div>
                 )}
-                <div className="flex justify-end">
-                  <Button type="submit" loading={addPaper.isPending}>
-                    <Plus className="h-4 w-4" />
-                    Add Paper
+                <div className="flex justify-end gap-2">
+                  {editingPaperId && (
+                    <Button type="button" variant="outline" onClick={cancelPaperEdit}>
+                      Cancel
+                    </Button>
+                  )}
+                  <Button type="submit" loading={editingPaperId ? updatePaper.isPending : addPaper.isPending}>
+                    {editingPaperId ? (
+                      <>
+                        <Pencil className="h-4 w-4" />
+                        Save Changes
+                      </>
+                    ) : (
+                      <>
+                        <Plus className="h-4 w-4" />
+                        Add Paper
+                      </>
+                    )}
                   </Button>
                 </div>
               </form>

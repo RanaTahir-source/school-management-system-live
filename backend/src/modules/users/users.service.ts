@@ -1,7 +1,8 @@
-import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import * as bcrypt from 'bcryptjs';
 import { PrismaService } from '../prisma/prisma.service';
 import { assertSchoolAccess, resolveSchoolScope, ScopedUser } from '../../common/utils/school-scope';
+import { UpdateStaffProfileDto } from './dto/update-staff-profile.dto';
 
 @Injectable()
 export class UsersService {
@@ -94,6 +95,68 @@ export class UsersService {
       const { passwordHash, ...safe } = updated;
       return safe;
     });
+  }
+
+  // Edits a staff account's own profile fields (fullName/email/phone/school/
+  // branch) - separate from updateRoles below, which only touches roleNames.
+  // Mirrors AuthService.signup's scoping: only a Chairman may move someone
+  // to a different school; a Director/Admin is locked to their own school.
+  async updateProfile(id: string, dto: UpdateStaffProfileDto, currentUser: ScopedUser & { userId: string }) {
+    const user = await this.prisma.user.findFirst({ where: { id, deletedAt: null } });
+    if (!user) throw new NotFoundException('User not found');
+    assertSchoolAccess(currentUser, user.schoolId);
+
+    if (dto.email && dto.email !== user.email) {
+      const existingEmail = await this.prisma.user.findUnique({ where: { email: dto.email } });
+      if (existingEmail && existingEmail.id !== id) {
+        throw new ConflictException('A user with this email already exists');
+      }
+    }
+    if (dto.phone && dto.phone !== user.phone) {
+      const existingPhone = await this.prisma.user.findUnique({ where: { phone: dto.phone } });
+      if (existingPhone && existingPhone.id !== id) {
+        throw new ConflictException('A user with this phone number already exists');
+      }
+    }
+
+    const isChairman = currentUser.roles.includes('CHAIRMAN');
+    if (dto.schoolId && dto.schoolId !== user.schoolId && !isChairman) {
+      throw new ForbiddenException('Only a Chairman can move a staff member to a different school');
+    }
+
+    const targetSchoolId = dto.schoolId ?? user.schoolId;
+    if (dto.branchId) {
+      const branch = await this.prisma.branch.findUnique({ where: { id: dto.branchId } });
+      if (!branch) throw new NotFoundException('Branch not found');
+      if (branch.schoolId !== targetSchoolId) {
+        throw new BadRequestException('Branch does not belong to the selected school');
+      }
+    }
+
+    const updated = await this.prisma.user.update({
+      where: { id },
+      data: {
+        fullName: dto.fullName,
+        email: dto.email,
+        phone: dto.phone,
+        schoolId: dto.schoolId,
+        branchId: dto.branchId,
+      },
+      include: { userRoles: { include: { role: true } }, school: true, branch: true },
+    });
+
+    await this.prisma.auditLog.create({
+      data: {
+        userId: currentUser.userId,
+        schoolId: updated.schoolId,
+        action: 'STAFF_UPDATED',
+        entity: 'User',
+        entityId: id,
+      },
+    });
+
+    const { passwordHash, ...safe } = updated;
+    return safe;
   }
 
   // Full replace of a user's role set. Only a Director may grant or revoke

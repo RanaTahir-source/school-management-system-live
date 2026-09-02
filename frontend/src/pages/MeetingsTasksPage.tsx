@@ -1,6 +1,6 @@
 import { FormEvent, useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { CalendarClock, ClipboardList, MapPin, Plus, Trash2, Users } from 'lucide-react';
+import { CalendarClock, ClipboardList, MapPin, Pencil, Plus, Trash2, Users } from 'lucide-react';
 import { api, ApiError } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
 import { Card, CardContent } from '@/components/ui/card';
@@ -74,7 +74,8 @@ function MeetingsTab() {
   const queryClient = useQueryClient();
   const isManager = hasRole(...MANAGE_ROLES);
   const [viewMine, setViewMine] = useState(!isManager);
-  const [createOpen, setCreateOpen] = useState(false);
+  const [formOpen, setFormOpen] = useState(false);
+  const [editingMeetingId, setEditingMeetingId] = useState<string | null>(null);
   const [detailId, setDetailId] = useState<string | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<Meeting | null>(null);
 
@@ -92,6 +93,19 @@ function MeetingsTab() {
   });
 
   const detail = useMemo(() => listQuery.data?.find((m) => m.id === detailId) ?? null, [listQuery.data, detailId]);
+  const editingMeeting = useMemo(
+    () => listQuery.data?.find((m) => m.id === editingMeetingId) ?? null,
+    [listQuery.data, editingMeetingId],
+  );
+
+  function openScheduleDialog() {
+    setEditingMeetingId(null);
+    setFormOpen(true);
+  }
+  function openEditMeetingDialog(meeting: Meeting) {
+    setEditingMeetingId(meeting.id);
+    setFormOpen(true);
+  }
 
   return (
     <div className="space-y-4">
@@ -109,7 +123,7 @@ function MeetingsTab() {
           <p className="text-sm text-muted-foreground">Meetings you're invited to.</p>
         )}
         {isManager && (
-          <Button onClick={() => setCreateOpen(true)}>
+          <Button onClick={openScheduleDialog}>
             <Plus className="h-4 w-4" />
             Schedule Meeting
           </Button>
@@ -162,6 +176,11 @@ function MeetingsTab() {
                           View
                         </Button>
                         {isManager && (
+                          <Button variant="ghost" size="sm" onClick={() => openEditMeetingDialog(m)}>
+                            <Pencil className="h-4 w-4" />
+                          </Button>
+                        )}
+                        {isManager && (
                           <Button
                             variant="ghost"
                             size="sm"
@@ -181,11 +200,15 @@ function MeetingsTab() {
         </CardContent>
       </Card>
 
-      {createOpen && (
-        <CreateMeetingDialog
-          open={createOpen}
-          onOpenChange={setCreateOpen}
-          onCreated={() => queryClient.invalidateQueries({ queryKey: ['meetings'] })}
+      {formOpen && (
+        <MeetingFormDialog
+          open={formOpen}
+          onOpenChange={(open) => {
+            setFormOpen(open);
+            if (!open) setEditingMeetingId(null);
+          }}
+          editingMeeting={editingMeeting}
+          onSaved={() => queryClient.invalidateQueries({ queryKey: ['meetings'] })}
         />
       )}
 
@@ -212,22 +235,35 @@ function MeetingsTab() {
   );
 }
 
-function CreateMeetingDialog({
+// Converts an ISO timestamp to the "YYYY-MM-DDTHH:mm" shape <input type="datetime-local"> expects.
+function toDatetimeLocalValue(iso: string) {
+  const d = new Date(iso);
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
+// Handles both "Schedule Meeting" (create) and "Edit Meeting" (full-detail
+// edit) - branches on whether editingMeeting is set, same as the update
+// dialogs on the Departments/Academics pages. The quick status+minutes
+// dialog (MeetingDetailDialog) is a separate, unaffected flow.
+function MeetingFormDialog({
   open,
   onOpenChange,
-  onCreated,
+  editingMeeting,
+  onSaved,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  onCreated: () => void;
+  editingMeeting: Meeting | null;
+  onSaved: () => void;
 }) {
   const { user, hasRole } = useAuth();
   const isUnrestricted = hasRole('DIRECTOR', 'ADMIN');
-  const [title, setTitle] = useState('');
-  const [agenda, setAgenda] = useState('');
-  const [scheduledAt, setScheduledAt] = useState('');
-  const [location, setLocation] = useState('');
-  const [attendeeIds, setAttendeeIds] = useState<string[]>([]);
+  const [title, setTitle] = useState(editingMeeting?.title ?? '');
+  const [agenda, setAgenda] = useState(editingMeeting?.agenda ?? '');
+  const [scheduledAt, setScheduledAt] = useState(editingMeeting ? toDatetimeLocalValue(editingMeeting.scheduledAt) : '');
+  const [location, setLocation] = useState(editingMeeting?.location ?? '');
+  const [attendeeIds, setAttendeeIds] = useState<string[]>(editingMeeting?.attendees.map((a) => a.userId) ?? []);
   const [error, setError] = useState<string | null>(null);
 
   const staffQuery = useQuery({
@@ -236,17 +272,20 @@ function CreateMeetingDialog({
   });
 
   const mutation = useMutation({
-    mutationFn: () =>
-      api.post('/meetings', {
-        schoolId: user?.schoolId,
+    mutationFn: () => {
+      const payload = {
         title,
         agenda: agenda || undefined,
         scheduledAt: new Date(scheduledAt).toISOString(),
         location: location || undefined,
         attendeeIds,
-      }),
+      };
+      return editingMeeting
+        ? api.patch(`/meetings/${editingMeeting.id}`, payload)
+        : api.post('/meetings', { ...payload, schoolId: user?.schoolId });
+    },
     onSuccess: () => {
-      onCreated();
+      onSaved();
       onOpenChange(false);
     },
     onError: (err: unknown) => setError(err instanceof ApiError ? err.body?.message ?? err.message : 'Something went wrong'),
@@ -260,7 +299,7 @@ function CreateMeetingDialog({
     e.preventDefault();
     setError(null);
     if (!title.trim() || !scheduledAt) return setError('Please enter a title and date/time.');
-    if (!user?.schoolId && !isUnrestricted) return setError('Your account is not assigned to a school.');
+    if (!editingMeeting && !user?.schoolId && !isUnrestricted) return setError('Your account is not assigned to a school.');
     mutation.mutate();
   }
 
@@ -268,8 +307,10 @@ function CreateMeetingDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent size="lg">
         <DialogHeader>
-          <DialogTitle>Schedule Meeting</DialogTitle>
-          <DialogDescription>Invited attendees get an in-app notification.</DialogDescription>
+          <DialogTitle>{editingMeeting ? 'Edit Meeting' : 'Schedule Meeting'}</DialogTitle>
+          <DialogDescription>
+            {editingMeeting ? 'Update the meeting details, including who is invited.' : 'Invited attendees get an in-app notification.'}
+          </DialogDescription>
         </DialogHeader>
         <form onSubmit={handleSubmit} className="space-y-4">
           <Field label="Title" required>
@@ -306,7 +347,7 @@ function CreateMeetingDialog({
               Cancel
             </Button>
             <Button type="submit" loading={mutation.isPending}>
-              Schedule
+              {editingMeeting ? 'Save Changes' : 'Schedule'}
             </Button>
           </DialogFooter>
         </form>
@@ -457,13 +498,28 @@ function TasksTab() {
   const queryClient = useQueryClient();
   const isManager = hasRole(...MANAGE_ROLES);
   const [viewMine, setViewMine] = useState(!isManager);
-  const [createOpen, setCreateOpen] = useState(false);
+  const [formOpen, setFormOpen] = useState(false);
+  const [editingTaskId, setEditingTaskId] = useState<string | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<StaffTask | null>(null);
 
   const listQuery = useQuery({
     queryKey: ['staff-tasks', viewMine],
     queryFn: () => api.get<StaffTask[]>(viewMine ? '/staff-tasks/mine' : '/staff-tasks'),
   });
+
+  const editingTask = useMemo(
+    () => listQuery.data?.find((t) => t.id === editingTaskId) ?? null,
+    [listQuery.data, editingTaskId],
+  );
+
+  function openAssignDialog() {
+    setEditingTaskId(null);
+    setFormOpen(true);
+  }
+  function openEditTaskDialog(task: StaffTask) {
+    setEditingTaskId(task.id);
+    setFormOpen(true);
+  }
 
   const statusMutation = useMutation({
     mutationFn: ({ id, status }: { id: string; status: StaffTaskStatus }) => api.patch(`/staff-tasks/${id}/status`, { status }),
@@ -494,7 +550,7 @@ function TasksTab() {
           <p className="text-sm text-muted-foreground">Tasks assigned to you.</p>
         )}
         {isManager && (
-          <Button onClick={() => setCreateOpen(true)}>
+          <Button onClick={openAssignDialog}>
             <Plus className="h-4 w-4" />
             Assign Task
           </Button>
@@ -552,16 +608,23 @@ function TasksTab() {
                       </Select>
                     </TableCell>
                     <TableCell className="text-right">
-                      {isManager && (
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          className="text-destructive hover:bg-destructive/10 hover:text-destructive"
-                          onClick={() => setDeleteTarget(t)}
-                        >
-                          <Trash2 className="h-4 w-4" />
-                        </Button>
-                      )}
+                      <div className="flex items-center justify-end gap-1">
+                        {isManager && (
+                          <Button variant="ghost" size="sm" onClick={() => openEditTaskDialog(t)}>
+                            <Pencil className="h-4 w-4" />
+                          </Button>
+                        )}
+                        {isManager && (
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="text-destructive hover:bg-destructive/10 hover:text-destructive"
+                            onClick={() => setDeleteTarget(t)}
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
+                        )}
+                      </div>
                     </TableCell>
                   </TableRow>
                 ))}
@@ -571,11 +634,15 @@ function TasksTab() {
         </CardContent>
       </Card>
 
-      {createOpen && (
-        <CreateTaskDialog
-          open={createOpen}
-          onOpenChange={setCreateOpen}
-          onCreated={() => queryClient.invalidateQueries({ queryKey: ['staff-tasks'] })}
+      {formOpen && (
+        <TaskFormDialog
+          open={formOpen}
+          onOpenChange={(open) => {
+            setFormOpen(open);
+            if (!open) setEditingTaskId(null);
+          }}
+          editingTask={editingTask}
+          onSaved={() => queryClient.invalidateQueries({ queryKey: ['staff-tasks'] })}
         />
       )}
 
@@ -592,21 +659,27 @@ function TasksTab() {
   );
 }
 
-function CreateTaskDialog({
+// Handles both "Assign Task" (create) and "Edit Task" (full-detail edit,
+// via the Pencil icon) - branches on whether editingTask is set. The quick
+// status dropdown in the table keeps using PATCH /staff-tasks/:id/status
+// directly and is untouched by this dialog.
+function TaskFormDialog({
   open,
   onOpenChange,
-  onCreated,
+  editingTask,
+  onSaved,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  onCreated: () => void;
+  editingTask: StaffTask | null;
+  onSaved: () => void;
 }) {
   const { user } = useAuth();
-  const [title, setTitle] = useState('');
-  const [description, setDescription] = useState('');
-  const [priority, setPriority] = useState<StaffTaskPriority>('MEDIUM');
-  const [dueDate, setDueDate] = useState('');
-  const [assignedToId, setAssignedToId] = useState('');
+  const [title, setTitle] = useState(editingTask?.title ?? '');
+  const [description, setDescription] = useState(editingTask?.description ?? '');
+  const [priority, setPriority] = useState<StaffTaskPriority>(editingTask?.priority ?? 'MEDIUM');
+  const [dueDate, setDueDate] = useState(editingTask?.dueDate ? editingTask.dueDate.slice(0, 10) : '');
+  const [assignedToId, setAssignedToId] = useState(editingTask?.assignedTo?.id ?? '');
   const [error, setError] = useState<string | null>(null);
 
   const staffQuery = useQuery({
@@ -615,17 +688,20 @@ function CreateTaskDialog({
   });
 
   const mutation = useMutation({
-    mutationFn: () =>
-      api.post('/staff-tasks', {
-        schoolId: user?.schoolId,
+    mutationFn: () => {
+      const payload = {
         title,
         description: description || undefined,
         priority,
         dueDate: dueDate || undefined,
         assignedToId,
-      }),
+      };
+      return editingTask
+        ? api.patch(`/staff-tasks/${editingTask.id}`, payload)
+        : api.post('/staff-tasks', { ...payload, schoolId: user?.schoolId });
+    },
     onSuccess: () => {
-      onCreated();
+      onSaved();
       onOpenChange(false);
     },
     onError: (err: unknown) => setError(err instanceof ApiError ? err.body?.message ?? err.message : 'Something went wrong'),
@@ -643,8 +719,10 @@ function CreateTaskDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent size="lg">
         <DialogHeader>
-          <DialogTitle>Assign Task</DialogTitle>
-          <DialogDescription>The assignee gets an in-app notification.</DialogDescription>
+          <DialogTitle>{editingTask ? 'Edit Task' : 'Assign Task'}</DialogTitle>
+          <DialogDescription>
+            {editingTask ? 'Update the task details below.' : 'The assignee gets an in-app notification.'}
+          </DialogDescription>
         </DialogHeader>
         <form onSubmit={handleSubmit} className="space-y-4">
           <Field label="Title" required>
@@ -694,7 +772,7 @@ function CreateTaskDialog({
               Cancel
             </Button>
             <Button type="submit" loading={mutation.isPending}>
-              Assign
+              {editingTask ? 'Save Changes' : 'Assign'}
             </Button>
           </DialogFooter>
         </form>

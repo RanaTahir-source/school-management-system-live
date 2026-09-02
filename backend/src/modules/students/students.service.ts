@@ -154,13 +154,47 @@ export class StudentsService {
   }
 
   async update(id: string, dto: UpdateStudentDto, currentUser: ScopedUser) {
-    await this.findOne(id, currentUser);
-    return this.prisma.studentProfile.update({
-      where: { id },
-      data: {
-        ...dto,
-        dateOfBirth: dto.dateOfBirth ? new Date(dto.dateOfBirth) : undefined,
-      },
+    const profile = await this.findOne(id, currentUser);
+
+    if (dto.admissionNo && dto.admissionNo !== profile.admissionNo) {
+      const existingAdmission = await this.prisma.studentProfile.findUnique({
+        where: { admissionNo: dto.admissionNo },
+      });
+      if (existingAdmission) throw new ConflictException('This admission number is already in use');
+    }
+
+    const { fullName, admissionNo, ...profileFields } = dto;
+
+    return this.prisma.$transaction(async (tx) => {
+      // fullName lives on the linked User record, not StudentProfile.
+      if (fullName) {
+        await tx.user.update({ where: { id: profile.userId }, data: { fullName } });
+      }
+
+      const updated = await tx.studentProfile.update({
+        where: { id },
+        data: {
+          ...profileFields,
+          admissionNo,
+          dateOfBirth: dto.dateOfBirth ? new Date(dto.dateOfBirth) : undefined,
+        },
+        include: {
+          user: { select: USER_SELECT },
+          section: { include: { class: true } },
+        },
+      });
+
+      await tx.auditLog.create({
+        data: {
+          userId: currentUser.userId,
+          schoolId: profile.user.schoolId,
+          action: 'STUDENT_UPDATED',
+          entity: 'StudentProfile',
+          entityId: id,
+        },
+      });
+
+      return updated;
     });
   }
 

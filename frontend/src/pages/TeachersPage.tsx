@@ -1,6 +1,6 @@
 import { FormEvent, useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Plus, Printer, Search, Upload, UserX, UsersRound } from 'lucide-react';
+import { Pencil, Plus, Printer, Search, Upload, UserX, UsersRound } from 'lucide-react';
 import { api, ApiError } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
 import { BulkImportDialog } from '@/components/BulkImportDialog';
@@ -36,6 +36,7 @@ import type { TeacherProfile, School } from '@/types';
 type FormState = {
   fullName: string;
   email: string;
+  phone: string;
   password: string;
   employeeId: string;
   schoolId: string;
@@ -50,6 +51,7 @@ type FormState = {
 const EMPTY_FORM: FormState = {
   fullName: '',
   email: '',
+  phone: '',
   password: '',
   employeeId: '',
   schoolId: '',
@@ -75,6 +77,7 @@ export default function TeachersPage() {
   const [form, setForm] = useState<FormState>(EMPTY_FORM);
   const [formError, setFormError] = useState<string | null>(null);
   const [deactivateTarget, setDeactivateTarget] = useState<TeacherProfile | null>(null);
+  const [editingTeacherId, setEditingTeacherId] = useState<string | null>(null);
 
   const teachersQuery = useQuery({
     queryKey: ['teachers'],
@@ -91,6 +94,20 @@ export default function TeachersPage() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['teachers'] });
       setCreateOpen(false);
+      setForm(EMPTY_FORM);
+      setFormError(null);
+    },
+    onError: (err: unknown) => {
+      setFormError(err instanceof ApiError ? err.body?.message ?? err.message : 'Something went wrong');
+    },
+  });
+
+  const updateMutation = useMutation({
+    mutationFn: (payload: Record<string, unknown>) => api.patch(`/teachers/${editingTeacherId}`, payload),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['teachers'] });
+      setCreateOpen(false);
+      setEditingTeacherId(null);
       setForm(EMPTY_FORM);
       setFormError(null);
     },
@@ -125,7 +142,28 @@ export default function TeachersPage() {
   }, [schoolsQuery.data, form.schoolId, isUnrestricted, user?.schoolId]);
 
   function openCreate() {
+    setEditingTeacherId(null);
     setForm({ ...EMPTY_FORM, schoolId: isUnrestricted ? '' : user?.schoolId ?? '' });
+    setFormError(null);
+    setCreateOpen(true);
+  }
+
+  function openEdit(t: TeacherProfile) {
+    setEditingTeacherId(t.id);
+    setForm({
+      fullName: t.user.fullName,
+      email: t.user.email,
+      phone: t.user.phone ?? '',
+      password: '',
+      employeeId: t.employeeId,
+      schoolId: '',
+      branchId: '',
+      qualification: t.qualification ?? '',
+      subjectSpecialty: t.subjectSpecialty ?? '',
+      joiningDate: t.joiningDate ? t.joiningDate.slice(0, 10) : '',
+      cnic: t.cnic ?? '',
+      address: t.address ?? '',
+    });
     setFormError(null);
     setCreateOpen(true);
   }
@@ -133,6 +171,24 @@ export default function TeachersPage() {
   function handleSubmit(e: FormEvent) {
     e.preventDefault();
     setFormError(null);
+
+    if (editingTeacherId) {
+      if (!form.fullName || !form.email) {
+        setFormError('Please fill all required fields.');
+        return;
+      }
+      updateMutation.mutate({
+        fullName: form.fullName,
+        email: form.email,
+        phone: form.phone || undefined,
+        qualification: form.qualification || undefined,
+        subjectSpecialty: form.subjectSpecialty || undefined,
+        joiningDate: form.joiningDate || undefined,
+        cnic: form.cnic || undefined,
+        address: form.address || undefined,
+      });
+      return;
+    }
 
     const effectiveSchoolId = isUnrestricted ? form.schoolId : user?.schoolId;
     if (!effectiveSchoolId) {
@@ -250,6 +306,10 @@ export default function TeachersPage() {
                     {canManage && (
                       <TableCell className="text-right">
                         <div className="flex items-center justify-end gap-1">
+                          <Button variant="ghost" size="sm" onClick={() => openEdit(t)}>
+                            <Pencil className="h-4 w-4" />
+                            Edit
+                          </Button>
                           <IdCardButton kind="teachers" id={t.id} />
                           <PhotoUploadButton
                             kind="teachers"
@@ -278,11 +338,21 @@ export default function TeachersPage() {
         </CardContent>
       </Card>
 
-      <Dialog open={createOpen} onOpenChange={setCreateOpen}>
+      <Dialog
+        open={createOpen}
+        onOpenChange={(o) => {
+          setCreateOpen(o);
+          if (!o) setEditingTeacherId(null);
+        }}
+      >
         <DialogContent size="lg">
           <DialogHeader>
-            <DialogTitle>Add Teacher</DialogTitle>
-            <DialogDescription>Creates a login account and teacher profile in one step.</DialogDescription>
+            <DialogTitle>{editingTeacherId ? 'Edit Teacher' : 'Add Teacher'}</DialogTitle>
+            <DialogDescription>
+              {editingTeacherId
+                ? "Update this teacher's contact info, subject, and other details."
+                : 'Creates a login account and teacher profile in one step.'}
+            </DialogDescription>
           </DialogHeader>
 
           <form onSubmit={handleSubmit} className="space-y-4">
@@ -298,6 +368,7 @@ export default function TeachersPage() {
                 <Input
                   value={form.employeeId}
                   onChange={(e) => setForm((f) => ({ ...f, employeeId: e.target.value }))}
+                  disabled={!!editingTeacherId}
                   required
                 />
               </Field>
@@ -309,16 +380,25 @@ export default function TeachersPage() {
                   required
                 />
               </Field>
-              <Field label="Password" required>
-                <PasswordInput
-                  minLength={8}
-                  value={form.password}
-                  onChange={(e) => setForm((f) => ({ ...f, password: e.target.value }))}
-                  required
+              <Field label="Phone">
+                <Input
+                  type="tel"
+                  value={form.phone}
+                  onChange={(e) => setForm((f) => ({ ...f, phone: e.target.value }))}
                 />
               </Field>
+              {!editingTeacherId && (
+                <Field label="Password" required>
+                  <PasswordInput
+                    minLength={8}
+                    value={form.password}
+                    onChange={(e) => setForm((f) => ({ ...f, password: e.target.value }))}
+                    required
+                  />
+                </Field>
+              )}
 
-              {isUnrestricted && (
+              {!editingTeacherId && isUnrestricted && (
                 <Field label="School" required>
                   <Select
                     value={form.schoolId}
@@ -338,24 +418,26 @@ export default function TeachersPage() {
                 </Field>
               )}
 
-              <Field label="Branch" required>
-                <Select
-                  value={form.branchId}
-                  onValueChange={(v) => setForm((f) => ({ ...f, branchId: v }))}
-                  disabled={!schoolBranches.length}
-                >
-                  <SelectTrigger>
-                    <SelectValue placeholder="Select branch" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {schoolBranches.map((b) => (
-                      <SelectItem key={b.id} value={b.id}>
-                        {b.name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </Field>
+              {!editingTeacherId && (
+                <Field label="Branch" required>
+                  <Select
+                    value={form.branchId}
+                    onValueChange={(v) => setForm((f) => ({ ...f, branchId: v }))}
+                    disabled={!schoolBranches.length}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select branch" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {schoolBranches.map((b) => (
+                        <SelectItem key={b.id} value={b.id}>
+                          {b.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </Field>
+              )}
 
               <Field label="Subject specialty">
                 <Input
@@ -393,11 +475,18 @@ export default function TeachersPage() {
             )}
 
             <DialogFooter>
-              <Button type="button" variant="outline" onClick={() => setCreateOpen(false)}>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => {
+                  setCreateOpen(false);
+                  setEditingTeacherId(null);
+                }}
+              >
                 Cancel
               </Button>
-              <Button type="submit" loading={createMutation.isPending}>
-                Create Teacher
+              <Button type="submit" loading={editingTeacherId ? updateMutation.isPending : createMutation.isPending}>
+                {editingTeacherId ? 'Save Changes' : 'Create Teacher'}
               </Button>
             </DialogFooter>
           </form>

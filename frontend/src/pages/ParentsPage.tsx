@@ -1,9 +1,10 @@
 import { FormEvent, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Baby, CreditCard, Link2, Plus, ReceiptText, Trash2, Users } from 'lucide-react';
+import { Baby, CreditCard, Link2, Pencil, Plus, ReceiptText, Trash2, Users } from 'lucide-react';
 import { api, ApiError } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
 import { PayOnlineDialog } from '@/components/PayOnlineDialog';
+import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -76,6 +77,8 @@ export default function ParentsPage() {
   const [parentOpen, setParentOpen] = useState(false);
   const [parentForm, setParentForm] = useState(parentForm0);
   const [parentError, setParentError] = useState<string | null>(null);
+  const [editingParentId, setEditingParentId] = useState<string | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<ParentUser | null>(null);
 
   const createParent = useMutation({
     mutationFn: (payload: Record<string, unknown>) => api.post('/parents', payload),
@@ -87,15 +90,58 @@ export default function ParentsPage() {
     },
     onError: (err: unknown) => setParentError(err instanceof ApiError ? err.body?.message ?? err.message : 'Something went wrong'),
   });
+  const updateParent = useMutation({
+    mutationFn: (payload: Record<string, unknown>) => api.patch(`/parents/${editingParentId}`, payload),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['parents'] });
+      setParentOpen(false);
+      setEditingParentId(null);
+      setParentForm(parentForm0);
+      setParentError(null);
+    },
+    onError: (err: unknown) => setParentError(err instanceof ApiError ? err.body?.message ?? err.message : 'Something went wrong'),
+  });
+  const deleteParent = useMutation({
+    mutationFn: (id: string) => api.delete(`/parents/${id}`),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['parents'] });
+      setDeleteTarget(null);
+    },
+  });
 
   function openParentDialog() {
+    setEditingParentId(null);
     setParentForm({ ...parentForm0, schoolId: isUnrestricted ? '' : user?.schoolId ?? '' });
+    setParentError(null);
+    setParentOpen(true);
+  }
+  function openEditParentDialog(p: ParentUser) {
+    setEditingParentId(p.id);
+    setParentForm({
+      schoolId: '',
+      fullName: p.fullName,
+      email: p.email,
+      password: '',
+      phone: p.phone ?? '',
+    });
     setParentError(null);
     setParentOpen(true);
   }
   function submitParent(e: FormEvent) {
     e.preventDefault();
     setParentError(null);
+    if (editingParentId) {
+      if (!parentForm.fullName || !parentForm.email) {
+        setParentError('Please fill all required fields.');
+        return;
+      }
+      updateParent.mutate({
+        fullName: parentForm.fullName,
+        email: parentForm.email,
+        phone: parentForm.phone || undefined,
+      });
+      return;
+    }
     const effectiveSchoolId = isUnrestricted ? parentForm.schoolId : user?.schoolId;
     if (!effectiveSchoolId || !parentForm.fullName || !parentForm.email || !parentForm.password) {
       setParentError('Please fill all required fields.');
@@ -255,10 +301,25 @@ export default function ParentsPage() {
                             <Badge variant={p.isActive ? 'success' : 'secondary'}>{p.isActive ? 'Active' : 'Inactive'}</Badge>
                           </TableCell>
                           <TableCell className="text-right">
-                            <Button variant="ghost" size="sm" onClick={() => openLinkDialog(p.id)}>
-                              <Link2 className="h-4 w-4" />
-                              Link Child
-                            </Button>
+                            <div className="flex items-center justify-end gap-1">
+                              <Button variant="ghost" size="sm" onClick={() => openLinkDialog(p.id)}>
+                                <Link2 className="h-4 w-4" />
+                                Link Child
+                              </Button>
+                              <Button variant="ghost" size="sm" onClick={() => openEditParentDialog(p)}>
+                                <Pencil className="h-4 w-4" />
+                              </Button>
+                              {isUnrestricted && (
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  className="text-destructive hover:bg-destructive/10 hover:text-destructive"
+                                  onClick={() => setDeleteTarget(p)}
+                                >
+                                  <Trash2 className="h-4 w-4" />
+                                </Button>
+                              )}
+                            </div>
                           </TableCell>
                         </TableRow>
                       ))}
@@ -387,15 +448,25 @@ export default function ParentsPage() {
         )}
       </Tabs>
 
-      {/* Add parent dialog */}
-      <Dialog open={parentOpen} onOpenChange={setParentOpen}>
+      {/* Add / edit parent dialog */}
+      <Dialog
+        open={parentOpen}
+        onOpenChange={(o) => {
+          setParentOpen(o);
+          if (!o) setEditingParentId(null);
+        }}
+      >
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Add Parent Account</DialogTitle>
-            <DialogDescription>Creates a login the parent can use to view their children's records.</DialogDescription>
+            <DialogTitle>{editingParentId ? 'Edit Parent Account' : 'Add Parent Account'}</DialogTitle>
+            <DialogDescription>
+              {editingParentId
+                ? "Update this parent's contact details."
+                : "Creates a login the parent can use to view their children's records."}
+            </DialogDescription>
           </DialogHeader>
           <form onSubmit={submitParent} className="space-y-4">
-            {isUnrestricted && (
+            {isUnrestricted && !editingParentId && (
               <Field label="School" required>
                 <Select value={parentForm.schoolId} onValueChange={(v) => setParentForm((f) => ({ ...f, schoolId: v }))}>
                   <SelectTrigger>
@@ -417,28 +488,51 @@ export default function ParentsPage() {
             <Field label="Email" required>
               <Input type="email" value={parentForm.email} onChange={(e) => setParentForm((f) => ({ ...f, email: e.target.value }))} required />
             </Field>
-            <div className="grid grid-cols-2 gap-4">
-              <Field label="Password" required>
-                <PasswordInput value={parentForm.password} onChange={(e) => setParentForm((f) => ({ ...f, password: e.target.value }))} required />
-              </Field>
+            {editingParentId ? (
               <Field label="Phone">
                 <Input value={parentForm.phone} onChange={(e) => setParentForm((f) => ({ ...f, phone: e.target.value }))} />
               </Field>
-            </div>
+            ) : (
+              <div className="grid grid-cols-2 gap-4">
+                <Field label="Password" required>
+                  <PasswordInput value={parentForm.password} onChange={(e) => setParentForm((f) => ({ ...f, password: e.target.value }))} required />
+                </Field>
+                <Field label="Phone">
+                  <Input value={parentForm.phone} onChange={(e) => setParentForm((f) => ({ ...f, phone: e.target.value }))} />
+                </Field>
+              </div>
+            )}
             {parentError && (
               <div className="rounded-lg border border-destructive/20 bg-destructive/5 px-3 py-2 text-sm text-destructive">{parentError}</div>
             )}
             <DialogFooter>
-              <Button type="button" variant="outline" onClick={() => setParentOpen(false)}>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => {
+                  setParentOpen(false);
+                  setEditingParentId(null);
+                }}
+              >
                 Cancel
               </Button>
-              <Button type="submit" loading={createParent.isPending}>
-                Create
+              <Button type="submit" loading={editingParentId ? updateParent.isPending : createParent.isPending}>
+                {editingParentId ? 'Save Changes' : 'Create'}
               </Button>
             </DialogFooter>
           </form>
         </DialogContent>
       </Dialog>
+
+      <ConfirmDialog
+        open={!!deleteTarget}
+        onOpenChange={(o) => !o && setDeleteTarget(null)}
+        title="Deactivate parent account?"
+        description={`This will disable "${deleteTarget?.fullName}"'s login and sign them out everywhere. Their linked children stay linked in case the account is reactivated later.`}
+        confirmLabel="Deactivate"
+        loading={deleteParent.isPending}
+        onConfirm={() => deleteTarget && deleteParent.mutate(deleteTarget.id)}
+      />
 
       {/* Link child dialog */}
       <Dialog open={linkOpen} onOpenChange={setLinkOpen}>

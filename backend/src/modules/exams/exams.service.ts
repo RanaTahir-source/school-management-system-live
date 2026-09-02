@@ -48,8 +48,19 @@ export class ExamsService {
   }
 
   async update(id: string, dto: UpdateExamDto, currentUser: ScopedUser) {
-    await this.findExamOrThrow(id, currentUser);
-    return this.prisma.exam.update({
+    const exam = await this.findExamOrThrow(id, currentUser);
+
+    if (dto.academicYearId && dto.academicYearId !== exam.academicYearId) {
+      const year = await this.prisma.academicYear.findFirst({
+        where: { id: dto.academicYearId, deletedAt: null },
+      });
+      if (!year) throw new NotFoundException('Academic year not found');
+      if (year.schoolId !== exam.schoolId) {
+        throw new ConflictException('This academic year belongs to a different school than the exam');
+      }
+    }
+
+    const updated = await this.prisma.exam.update({
       where: { id },
       data: {
         ...dto,
@@ -57,6 +68,18 @@ export class ExamsService {
         endDate: dto.endDate ? new Date(dto.endDate) : undefined,
       },
     });
+
+    await this.prisma.auditLog.create({
+      data: {
+        userId: currentUser.userId,
+        schoolId: exam.schoolId,
+        action: 'EXAM_UPDATED',
+        entity: 'Exam',
+        entityId: id,
+      },
+    });
+
+    return updated;
   }
 
   async remove(id: string, currentUser: ScopedUser) {
@@ -117,13 +140,40 @@ export class ExamsService {
     if (passingMarks > maxMarks) {
       throw new ConflictException('passingMarks cannot be greater than maxMarks');
     }
-    return this.prisma.examSubject.update({
+
+    // Same guard as removeSubject(): once marks are entered against this
+    // paper, changing its marks scale would silently desync every already-
+    // recorded ExamResult (a 45/50 becomes meaningless if maxMarks changes
+    // to 100). examDate is unaffected by this and stays freely editable.
+    const scaleChanging = dto.maxMarks !== undefined || dto.passingMarks !== undefined;
+    if (scaleChanging) {
+      const resultCount = await this.prisma.examResult.count({ where: { examSubjectId } });
+      if (resultCount > 0) {
+        throw new ConflictException(
+          'Marks have already been entered for this paper - cannot change its marks scale without risking data inconsistency',
+        );
+      }
+    }
+
+    const updated = await this.prisma.examSubject.update({
       where: { id: examSubjectId },
       data: {
         ...dto,
         examDate: dto.examDate ? new Date(dto.examDate) : undefined,
       },
     });
+
+    await this.prisma.auditLog.create({
+      data: {
+        userId: currentUser.userId,
+        schoolId: paper.exam.schoolId,
+        action: 'EXAM_PAPER_UPDATED',
+        entity: 'ExamSubject',
+        entityId: examSubjectId,
+      },
+    });
+
+    return updated;
   }
 
   async removeSubject(examSubjectId: string, currentUser: ScopedUser) {

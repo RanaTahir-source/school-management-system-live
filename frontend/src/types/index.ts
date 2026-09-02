@@ -45,9 +45,15 @@ export type PlatformSchool = {
 export type StudentProfile = {
   id: string;
   admissionNo: string;
+  dateOfBirth?: string | null;
+  gender?: 'MALE' | 'FEMALE' | null;
+  guardianName?: string | null;
+  guardianPhone?: string | null;
+  guardianCnic?: string | null;
+  address?: string | null;
   isActive: boolean;
   photoUrl?: string | null;
-  user: { id: string; fullName: string; email: string; isActive: boolean };
+  user: { id: string; fullName: string; email: string; isActive: boolean; schoolId?: string | null };
   section?: { id: string; name: string; class?: { id: string; name: string } } | null;
 };
 
@@ -61,7 +67,7 @@ export type TeacherProfile = {
   address?: string | null;
   isActive: boolean;
   photoUrl?: string | null;
-  user: { id: string; fullName: string; email: string; isActive: boolean };
+  user: { id: string; fullName: string; email: string; phone: string | null; isActive: boolean };
 };
 
 export type ClassRecord = {

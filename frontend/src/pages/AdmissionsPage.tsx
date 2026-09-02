@@ -1,6 +1,6 @@
 import { FormEvent, useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { CheckCircle2, Plus, Search, UserPlus, UserCheck } from 'lucide-react';
+import { CheckCircle2, Pencil, Plus, Search, Trash2, UserPlus, UserCheck } from 'lucide-react';
 import { api, ApiError } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
 import { Card, CardContent } from '@/components/ui/card';
@@ -20,6 +20,7 @@ import {
   DialogFooter,
 } from '@/components/ui/dialog';
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from '@/components/ui/select';
+import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { formatDate } from '@/lib/utils';
 import type {
   AdmissionEnquiry,
@@ -101,10 +102,12 @@ export default function AdmissionsPage() {
   const [createOpen, setCreateOpen] = useState(false);
   const [form, setForm] = useState<EnquiryForm>(EMPTY_ENQUIRY_FORM);
   const [formError, setFormError] = useState<string | null>(null);
+  const [editingEnquiryId, setEditingEnquiryId] = useState<string | null>(null);
   const [detailId, setDetailId] = useState<string | null>(null);
   const [followUpNote, setFollowUpNote] = useState('');
   const [followUpDate, setFollowUpDate] = useState('');
   const [convertTarget, setConvertTarget] = useState<AdmissionEnquiry | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<AdmissionEnquiry | null>(null);
 
   const enquiriesQuery = useQuery({
     queryKey: ['admission-enquiries', statusFilter, sourceFilter],
@@ -159,6 +162,29 @@ export default function AdmissionsPage() {
     },
   });
 
+  const updateEnquiryMutation = useMutation({
+    mutationFn: (payload: Record<string, unknown>) => api.patch(`/admissions/enquiries/${editingEnquiryId}`, payload),
+    onSuccess: () => {
+      invalidateAll();
+      setCreateOpen(false);
+      setEditingEnquiryId(null);
+      setForm(EMPTY_ENQUIRY_FORM);
+      setFormError(null);
+    },
+    onError: (err: unknown) => {
+      setFormError(err instanceof ApiError ? err.body?.message ?? err.message : 'Something went wrong');
+    },
+  });
+
+  const deleteEnquiryMutation = useMutation({
+    mutationFn: (id: string) => api.delete(`/admissions/enquiries/${id}`),
+    onSuccess: () => {
+      invalidateAll();
+      setDeleteTarget(null);
+      setDetailId((current) => (current === deleteTarget?.id ? null : current));
+    },
+  });
+
   const statusMutation = useMutation({
     mutationFn: ({ id, status }: { id: string; status: AdmissionStatus }) =>
       api.patch(`/admissions/enquiries/${id}`, { status }),
@@ -184,14 +210,50 @@ export default function AdmissionsPage() {
   });
 
   function openCreate() {
+    setEditingEnquiryId(null);
     setForm({ ...EMPTY_ENQUIRY_FORM, schoolId: isUnrestricted ? '' : user?.schoolId ?? '' });
     setFormError(null);
     setCreateOpen(true);
   }
 
-  function handleSubmit(e: FormEvent) {
+  function openEditEnquiryDialog(e: AdmissionEnquiry) {
+    setEditingEnquiryId(e.id);
+    setForm({
+      schoolId: e.schoolId,
+      branchId: e.branchId ?? '',
+      childName: e.childName,
+      desiredClassName: e.desiredClassName ?? '',
+      parentName: e.parentName,
+      phone: e.phone,
+      email: e.email ?? '',
+      address: e.address ?? '',
+      source: e.source,
+      notes: e.notes ?? '',
+    });
+    setFormError(null);
+    setCreateOpen(true);
+  }
+
+  function submitEnquiry(e: FormEvent) {
     e.preventDefault();
     setFormError(null);
+
+    if (editingEnquiryId) {
+      if (!form.childName || !form.parentName || !form.phone) return setFormError('Please fill all required fields.');
+      updateEnquiryMutation.mutate({
+        branchId: form.branchId || undefined,
+        childName: form.childName,
+        desiredClassName: form.desiredClassName || undefined,
+        parentName: form.parentName,
+        phone: form.phone,
+        email: form.email || undefined,
+        address: form.address || undefined,
+        source: form.source,
+        notes: form.notes || undefined,
+      });
+      return;
+    }
+
     const effectiveSchoolId = isUnrestricted ? form.schoolId : user?.schoolId;
     if (!effectiveSchoolId) return setFormError('Please select a school.');
     if (!form.childName || !form.parentName || !form.phone) return setFormError('Please fill all required fields.');
@@ -322,9 +384,24 @@ export default function AdmissionsPage() {
                     </TableCell>
                     <TableCell className="text-muted-foreground">{e.assignedTo?.fullName ?? '—'}</TableCell>
                     <TableCell className="text-right">
-                      <Button variant="ghost" size="sm" onClick={() => setDetailId(e.id)}>
-                        View
-                      </Button>
+                      <div className="flex items-center justify-end gap-1">
+                        <Button variant="ghost" size="sm" onClick={() => setDetailId(e.id)}>
+                          View
+                        </Button>
+                        <Button variant="ghost" size="sm" onClick={() => openEditEnquiryDialog(e)}>
+                          <Pencil className="h-4 w-4" />
+                        </Button>
+                        {isUnrestricted && (
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="text-destructive hover:bg-destructive/10 hover:text-destructive"
+                            onClick={() => setDeleteTarget(e)}
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
+                        )}
+                      </div>
                     </TableCell>
                   </TableRow>
                 ))}
@@ -334,15 +411,25 @@ export default function AdmissionsPage() {
         </CardContent>
       </Card>
 
-      {/* Create enquiry dialog */}
-      <Dialog open={createOpen} onOpenChange={setCreateOpen}>
+      {/* Create / edit enquiry dialog */}
+      <Dialog
+        open={createOpen}
+        onOpenChange={(open) => {
+          setCreateOpen(open);
+          if (!open) setEditingEnquiryId(null);
+        }}
+      >
         <DialogContent size="lg">
           <DialogHeader>
-            <DialogTitle>New Admission Enquiry</DialogTitle>
-            <DialogDescription>Log a walk-in visitor, phone call, or referral before they become a student.</DialogDescription>
+            <DialogTitle>{editingEnquiryId ? 'Edit Enquiry' : 'New Admission Enquiry'}</DialogTitle>
+            <DialogDescription>
+              {editingEnquiryId
+                ? "Correct this enquiry's child, parent, or contact details."
+                : 'Log a walk-in visitor, phone call, or referral before they become a student.'}
+            </DialogDescription>
           </DialogHeader>
 
-          <form onSubmit={handleSubmit} className="space-y-4">
+          <form onSubmit={submitEnquiry} className="space-y-4">
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
               <Field label="Child's name" required>
                 <Input value={form.childName} onChange={(e) => setForm((f) => ({ ...f, childName: e.target.value }))} required />
@@ -383,6 +470,7 @@ export default function AdmissionsPage() {
                   <Select
                     value={form.schoolId}
                     onValueChange={(v) => setForm((f) => ({ ...f, schoolId: v, branchId: '' }))}
+                    disabled={!!editingEnquiryId}
                   >
                     <SelectTrigger>
                       <SelectValue placeholder="Select school" />
@@ -426,16 +514,33 @@ export default function AdmissionsPage() {
             )}
 
             <DialogFooter>
-              <Button type="button" variant="outline" onClick={() => setCreateOpen(false)}>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => {
+                  setCreateOpen(false);
+                  setEditingEnquiryId(null);
+                }}
+              >
                 Cancel
               </Button>
-              <Button type="submit" loading={createMutation.isPending}>
-                Log Enquiry
+              <Button type="submit" loading={editingEnquiryId ? updateEnquiryMutation.isPending : createMutation.isPending}>
+                {editingEnquiryId ? 'Save Changes' : 'Log Enquiry'}
               </Button>
             </DialogFooter>
           </form>
         </DialogContent>
       </Dialog>
+
+      <ConfirmDialog
+        open={!!deleteTarget}
+        onOpenChange={(open) => !open && setDeleteTarget(null)}
+        title="Delete enquiry?"
+        description={`This will remove the enquiry for "${deleteTarget?.childName}". This action cannot be undone from here.`}
+        confirmLabel="Delete"
+        loading={deleteEnquiryMutation.isPending}
+        onConfirm={() => deleteTarget && deleteEnquiryMutation.mutate(deleteTarget.id)}
+      />
 
       {/* Detail dialog */}
       <Dialog open={!!detail} onOpenChange={(open) => !open && setDetailId(null)}>
@@ -443,10 +548,26 @@ export default function AdmissionsPage() {
           {detail && (
             <>
               <DialogHeader>
-                <DialogTitle>{detail.childName}</DialogTitle>
-                <DialogDescription>
-                  {detail.parentName} &middot; {detail.phone} {detail.email ? `· ${detail.email}` : ''}
-                </DialogDescription>
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <DialogTitle>{detail.childName}</DialogTitle>
+                    <DialogDescription>
+                      {detail.parentName} &middot; {detail.phone} {detail.email ? `· ${detail.email}` : ''}
+                    </DialogDescription>
+                  </div>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => {
+                      openEditEnquiryDialog(detail);
+                      setDetailId(null);
+                    }}
+                  >
+                    <Pencil className="h-3.5 w-3.5" />
+                    Edit Details
+                  </Button>
+                </div>
               </DialogHeader>
 
               <div className="space-y-4">

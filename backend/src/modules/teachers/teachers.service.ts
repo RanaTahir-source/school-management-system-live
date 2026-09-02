@@ -8,7 +8,15 @@ import { buildLoginId, buildAliasEmail } from '../../common/utils/login-id';
 import { buildExcelTemplate, BulkImportSummary } from '../../common/utils/excel-import';
 import { savePersonPhoto } from '../../common/utils/photo-storage';
 
-const USER_SELECT = { id: true, fullName: true, email: true, loginId: true, isActive: true, schoolId: true } as const;
+const USER_SELECT = {
+  id: true,
+  fullName: true,
+  email: true,
+  phone: true,
+  loginId: true,
+  isActive: true,
+  schoolId: true,
+} as const;
 
 @Injectable()
 export class TeachersService {
@@ -114,8 +122,57 @@ export class TeachersService {
   }
 
   async update(id: string, dto: UpdateTeacherDto, currentUser: ScopedUser) {
-    await this.findOne(id, currentUser);
-    return this.prisma.teacherProfile.update({ where: { id }, data: dto });
+    const profile = await this.findOne(id, currentUser);
+
+    if (dto.email && dto.email !== profile.user.email) {
+      const existingEmail = await this.prisma.user.findUnique({ where: { email: dto.email } });
+      if (existingEmail) throw new ConflictException('A user with this email already exists');
+    }
+    if (dto.phone) {
+      const existingPhone = await this.prisma.user.findUnique({ where: { phone: dto.phone } });
+      if (existingPhone && existingPhone.id !== profile.userId) {
+        throw new ConflictException('A user with this phone number already exists');
+      }
+    }
+
+    return this.prisma.$transaction(async (tx) => {
+      // fullName/email/phone live on the User record, not TeacherProfile.
+      if (dto.fullName !== undefined || dto.email !== undefined || dto.phone !== undefined) {
+        await tx.user.update({
+          where: { id: profile.userId },
+          data: {
+            fullName: dto.fullName,
+            email: dto.email,
+            phone: dto.phone,
+          },
+        });
+      }
+
+      const updated = await tx.teacherProfile.update({
+        where: { id },
+        data: {
+          qualification: dto.qualification,
+          subjectSpecialty: dto.subjectSpecialty,
+          joiningDate: dto.joiningDate ? new Date(dto.joiningDate) : undefined,
+          cnic: dto.cnic,
+          address: dto.address,
+          isActive: dto.isActive,
+        },
+        include: { user: { select: USER_SELECT } },
+      });
+
+      await tx.auditLog.create({
+        data: {
+          userId: currentUser.userId,
+          schoolId: updated.user.schoolId,
+          action: 'TEACHER_UPDATED',
+          entity: 'TeacherProfile',
+          entityId: updated.id,
+        },
+      });
+
+      return updated;
+    });
   }
 
   async remove(id: string, currentUser: ScopedUser) {

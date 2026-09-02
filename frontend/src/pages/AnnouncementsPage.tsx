@@ -1,6 +1,6 @@
 import { FormEvent, useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Megaphone, Plus, Send, Trash2 } from 'lucide-react';
+import { Megaphone, Pencil, Plus, Send, Trash2 } from 'lucide-react';
 import { api, ApiError } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
 import { Card, CardContent } from '@/components/ui/card';
@@ -67,12 +67,25 @@ export default function AnnouncementsPage() {
   const [form, setForm] = useState(emptyForm);
   const [error, setError] = useState<string | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<Announcement | null>(null);
+  const [editingId, setEditingId] = useState<string | null>(null);
 
   const create = useMutation({
     mutationFn: (payload: Record<string, unknown>) => api.post('/announcements', payload),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['announcements'] });
       setOpen(false);
+      setForm(emptyForm);
+      setError(null);
+    },
+    onError: (err: unknown) => setError(err instanceof ApiError ? err.body?.message ?? err.message : 'Something went wrong'),
+  });
+
+  const update = useMutation({
+    mutationFn: (payload: Record<string, unknown>) => api.patch(`/announcements/${editingId}`, payload),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['announcements'] });
+      setOpen(false);
+      setEditingId(null);
       setForm(emptyForm);
       setError(null);
     },
@@ -104,7 +117,24 @@ export default function AnnouncementsPage() {
   });
 
   function openDialog() {
+    setEditingId(null);
     setForm({ ...emptyForm, schoolId: isUnrestricted ? '' : user?.schoolId ?? '' });
+    setError(null);
+    setOpen(true);
+  }
+
+  function openEditDialog(a: Announcement) {
+    setEditingId(a.id);
+    setForm({
+      schoolId: a.schoolId,
+      title: a.title,
+      body: a.body,
+      priority: a.priority,
+      classId: a.classId ?? '',
+      sectionId: a.sectionId ?? '',
+      audienceRoles: a.audienceRoles,
+      publishNow: false,
+    });
     setError(null);
     setOpen(true);
   }
@@ -124,6 +154,17 @@ export default function AnnouncementsPage() {
     const effectiveSchoolId = isUnrestricted ? form.schoolId : user?.schoolId;
     if (!effectiveSchoolId || !form.title || !form.body) {
       setError('Please fill all required fields.');
+      return;
+    }
+    if (editingId) {
+      update.mutate({
+        title: form.title,
+        body: form.body,
+        priority: form.priority,
+        audienceRoles: form.audienceRoles,
+        classId: form.classId || undefined,
+        sectionId: form.sectionId || undefined,
+      });
       return;
     }
     create.mutate({
@@ -215,6 +256,10 @@ export default function AnnouncementsPage() {
                             Publish
                           </Button>
                         )}
+                        <Button variant="ghost" size="sm" onClick={() => openEditDialog(a)}>
+                          <Pencil className="h-4 w-4" />
+                          Edit
+                        </Button>
                         {canDelete && (
                           <Button
                             variant="ghost"
@@ -235,18 +280,30 @@ export default function AnnouncementsPage() {
         </CardContent>
       </Card>
 
-      <Dialog open={open} onOpenChange={setOpen}>
+      <Dialog
+        open={open}
+        onOpenChange={(o) => {
+          setOpen(o);
+          if (!o) setEditingId(null);
+        }}
+      >
         <DialogContent size="lg">
           <DialogHeader>
-            <DialogTitle>New Announcement</DialogTitle>
+            <DialogTitle>{editingId ? 'Edit Announcement' : 'New Announcement'}</DialogTitle>
             <DialogDescription>
-              Target everyone at a school, or narrow it down to specific roles and/or a class.
+              {editingId
+                ? 'Update the title, message, priority, or targeting. This will not re-notify recipients.'
+                : 'Target everyone at a school, or narrow it down to specific roles and/or a class.'}
             </DialogDescription>
           </DialogHeader>
           <form onSubmit={submit} className="space-y-4">
             {isUnrestricted && (
               <Field label="School" required>
-                <Select value={form.schoolId} onValueChange={(v) => setForm((f) => ({ ...f, schoolId: v, classId: '', sectionId: '' }))}>
+                <Select
+                  value={form.schoolId}
+                  onValueChange={(v) => setForm((f) => ({ ...f, schoolId: v, classId: '', sectionId: '' }))}
+                  disabled={!!editingId}
+                >
                   <SelectTrigger>
                     <SelectValue placeholder="Select school" />
                   </SelectTrigger>
@@ -361,19 +418,21 @@ export default function AnnouncementsPage() {
               </div>
             </div>
 
-            <button
-              type="button"
-              onClick={() => setForm((f) => ({ ...f, publishNow: !f.publishNow }))}
-              className={cn(
-                'flex w-full items-center justify-between rounded-lg border px-3 py-2 text-sm transition-colors',
-                form.publishNow ? 'border-primary/30 bg-primary/5' : 'border-border',
-              )}
-            >
-              <span className="font-medium text-foreground">Publish immediately</span>
-              <span className={cn('text-xs', form.publishNow ? 'text-primary' : 'text-muted-foreground')}>
-                {form.publishNow ? 'On — notifies everyone now' : 'Off — saved as draft'}
-              </span>
-            </button>
+            {!editingId && (
+              <button
+                type="button"
+                onClick={() => setForm((f) => ({ ...f, publishNow: !f.publishNow }))}
+                className={cn(
+                  'flex w-full items-center justify-between rounded-lg border px-3 py-2 text-sm transition-colors',
+                  form.publishNow ? 'border-primary/30 bg-primary/5' : 'border-border',
+                )}
+              >
+                <span className="font-medium text-foreground">Publish immediately</span>
+                <span className={cn('text-xs', form.publishNow ? 'text-primary' : 'text-muted-foreground')}>
+                  {form.publishNow ? 'On — notifies everyone now' : 'Off — saved as draft'}
+                </span>
+              </button>
+            )}
 
             {error && (
               <div className="rounded-lg border border-destructive/20 bg-destructive/5 px-3 py-2 text-sm text-destructive">
@@ -381,11 +440,18 @@ export default function AnnouncementsPage() {
               </div>
             )}
             <DialogFooter>
-              <Button type="button" variant="outline" onClick={() => setOpen(false)}>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => {
+                  setOpen(false);
+                  setEditingId(null);
+                }}
+              >
                 Cancel
               </Button>
-              <Button type="submit" loading={create.isPending}>
-                {form.publishNow ? 'Publish' : 'Save Draft'}
+              <Button type="submit" loading={editingId ? update.isPending : create.isPending}>
+                {editingId ? 'Save Changes' : form.publishNow ? 'Publish' : 'Save Draft'}
               </Button>
             </DialogFooter>
           </form>

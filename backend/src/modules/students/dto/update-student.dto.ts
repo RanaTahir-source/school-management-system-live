@@ -1,7 +1,20 @@
-import { IsBoolean, IsDateString, IsEnum, IsOptional, IsString, IsUUID } from 'class-validator';
+import { IsBoolean, IsDateString, IsEnum, IsNotEmpty, IsOptional, IsString, IsUUID } from 'class-validator';
 import { Gender } from '@prisma/client';
 
 export class UpdateStudentDto {
+  // Lives on the linked User record, not StudentProfile - the service
+  // updates both in one transaction. Kept optional so callers can PATCH
+  // just guardian/section info without re-sending the name.
+  @IsOptional()
+  @IsString()
+  @IsNotEmpty()
+  fullName?: string;
+
+  @IsOptional()
+  @IsString()
+  @IsNotEmpty()
+  admissionNo?: string;
+
   @IsOptional()
   @IsDateString()
   dateOfBirth?: string;

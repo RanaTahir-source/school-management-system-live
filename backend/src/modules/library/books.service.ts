@@ -63,10 +63,22 @@ export class BooksService {
       availableCopies = Math.max(0, book.availableCopies + delta);
     }
 
-    return this.prisma.book.update({
+    const updated = await this.prisma.book.update({
       where: { id },
       data: { ...dto, availableCopies },
     });
+
+    await this.prisma.auditLog.create({
+      data: {
+        userId: currentUser.userId,
+        schoolId: book.schoolId,
+        action: 'LIBRARY_BOOK_UPDATED',
+        entity: 'Book',
+        entityId: id,
+      },
+    });
+
+    return updated;
   }
 
   async remove(id: string, currentUser: ScopedUser) {

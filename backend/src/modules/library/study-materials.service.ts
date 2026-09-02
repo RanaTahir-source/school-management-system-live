@@ -1,7 +1,7 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { MaterialType } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
-import { CreateStudyMaterialDto } from './dto/create-study-material.dto';
+import { CreateStudyMaterialDto, UpdateStudyMaterialDto } from './dto/create-study-material.dto';
 import { assertSchoolAccess, resolveSchoolScope, ScopedUser } from '../../common/utils/school-scope';
 
 @Injectable()
@@ -41,6 +41,34 @@ export class StudyMaterialsService {
       },
       orderBy: { createdAt: 'desc' },
     });
+  }
+
+  async update(id: string, dto: UpdateStudyMaterialDto, currentUser: ScopedUser) {
+    const material = await this.prisma.studyMaterial.findFirst({ where: { id, deletedAt: null } });
+    if (!material) throw new NotFoundException('Study material not found');
+    assertSchoolAccess(currentUser, material.schoolId);
+
+    const updated = await this.prisma.studyMaterial.update({
+      where: { id },
+      data: { ...dto },
+      include: {
+        class: { select: { id: true, name: true } },
+        subject: { select: { id: true, name: true } },
+        uploadedBy: { select: { id: true, fullName: true } },
+      },
+    });
+
+    await this.prisma.auditLog.create({
+      data: {
+        userId: currentUser.userId,
+        schoolId: material.schoolId,
+        action: 'STUDY_MATERIAL_UPDATED',
+        entity: 'StudyMaterial',
+        entityId: id,
+      },
+    });
+
+    return updated;
   }
 
   async remove(id: string, currentUser: ScopedUser) {

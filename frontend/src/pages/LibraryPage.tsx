@@ -1,6 +1,6 @@
 import { FormEvent, useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { BookOpen, BookMarked, FileText, Plus, RotateCcw, Trash2, TriangleAlert } from 'lucide-react';
+import { BookOpen, BookMarked, FileText, Pencil, Plus, RotateCcw, Trash2, TriangleAlert } from 'lucide-react';
 import { api, ApiError } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
@@ -77,6 +77,7 @@ export default function LibraryPage() {
   const [bookOpen, setBookOpen] = useState(false);
   const [bookForm, setBookForm] = useState(bookForm0);
   const [bookError, setBookError] = useState<string | null>(null);
+  const [editingBookId, setEditingBookId] = useState<string | null>(null);
   const [deactivateBook, setDeactivateBook] = useState<Book | null>(null);
 
   const createBook = useMutation({
@@ -84,6 +85,18 @@ export default function LibraryPage() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['library', 'books'] });
       setBookOpen(false);
+      setBookForm(bookForm0);
+      setBookError(null);
+    },
+    onError: (err: unknown) => setBookError(err instanceof ApiError ? err.body?.message ?? err.message : 'Something went wrong'),
+  });
+
+  const updateBook = useMutation({
+    mutationFn: (payload: Record<string, unknown>) => api.patch(`/library/books/${editingBookId}`, payload),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['library', 'books'] });
+      setBookOpen(false);
+      setEditingBookId(null);
       setBookForm(bookForm0);
       setBookError(null);
     },
@@ -99,13 +112,43 @@ export default function LibraryPage() {
   });
 
   function openBookDialog() {
+    setEditingBookId(null);
     setBookForm({ ...bookForm0, schoolId: isUnrestricted ? '' : user?.schoolId ?? '' });
+    setBookError(null);
+    setBookOpen(true);
+  }
+  function openEditBookDialog(b: Book) {
+    setEditingBookId(b.id);
+    setBookForm({
+      schoolId: b.schoolId,
+      title: b.title,
+      author: b.author ?? '',
+      isbn: b.isbn ?? '',
+      category: b.category ?? '',
+      shelfLocation: b.shelfLocation ?? '',
+      totalCopies: String(b.totalCopies ?? 1),
+    });
     setBookError(null);
     setBookOpen(true);
   }
   function submitBook(e: FormEvent) {
     e.preventDefault();
     setBookError(null);
+    if (editingBookId) {
+      if (!bookForm.title) {
+        setBookError('Please fill all required fields.');
+        return;
+      }
+      updateBook.mutate({
+        title: bookForm.title,
+        author: bookForm.author || undefined,
+        isbn: bookForm.isbn || undefined,
+        category: bookForm.category || undefined,
+        shelfLocation: bookForm.shelfLocation || undefined,
+        totalCopies: bookForm.totalCopies ? Number(bookForm.totalCopies) : undefined,
+      });
+      return;
+    }
     const effectiveSchoolId = isUnrestricted ? bookForm.schoolId : user?.schoolId;
     if (!effectiveSchoolId || !bookForm.title) {
       setBookError('Please fill all required fields.');
@@ -222,6 +265,7 @@ export default function LibraryPage() {
   const [materialOpen, setMaterialOpen] = useState(false);
   const [materialForm, setMaterialForm] = useState(materialForm0);
   const [materialError, setMaterialError] = useState<string | null>(null);
+  const [editingMaterialId, setEditingMaterialId] = useState<string | null>(null);
   const [deleteMaterial, setDeleteMaterial] = useState<StudyMaterial | null>(null);
 
   const createMaterial = useMutation({
@@ -229,6 +273,18 @@ export default function LibraryPage() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['library', 'materials'] });
       setMaterialOpen(false);
+      setMaterialForm(materialForm0);
+      setMaterialError(null);
+    },
+    onError: (err: unknown) => setMaterialError(err instanceof ApiError ? err.body?.message ?? err.message : 'Something went wrong'),
+  });
+
+  const updateMaterial = useMutation({
+    mutationFn: (payload: Record<string, unknown>) => api.patch(`/library/materials/${editingMaterialId}`, payload),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['library', 'materials'] });
+      setMaterialOpen(false);
+      setEditingMaterialId(null);
       setMaterialForm(materialForm0);
       setMaterialError(null);
     },
@@ -244,13 +300,43 @@ export default function LibraryPage() {
   });
 
   function openMaterialDialog() {
+    setEditingMaterialId(null);
     setMaterialForm({ ...materialForm0, schoolId: isUnrestricted ? '' : user?.schoolId ?? '' });
+    setMaterialError(null);
+    setMaterialOpen(true);
+  }
+  function openEditMaterialDialog(m: StudyMaterial) {
+    setEditingMaterialId(m.id);
+    setMaterialForm({
+      schoolId: m.schoolId,
+      classId: m.classId ?? '',
+      subjectId: m.subjectId ?? '',
+      title: m.title,
+      description: m.description ?? '',
+      fileUrl: m.fileUrl,
+      type: m.type,
+    });
     setMaterialError(null);
     setMaterialOpen(true);
   }
   function submitMaterial(e: FormEvent) {
     e.preventDefault();
     setMaterialError(null);
+    if (editingMaterialId) {
+      if (!materialForm.title || !materialForm.fileUrl) {
+        setMaterialError('Please fill all required fields.');
+        return;
+      }
+      updateMaterial.mutate({
+        classId: materialForm.classId || undefined,
+        subjectId: materialForm.subjectId || undefined,
+        title: materialForm.title,
+        description: materialForm.description || undefined,
+        fileUrl: materialForm.fileUrl,
+        type: materialForm.type,
+      });
+      return;
+    }
     const effectiveSchoolId = isUnrestricted ? materialForm.schoolId : user?.schoolId;
     if (!effectiveSchoolId || !materialForm.title || !materialForm.fileUrl) {
       setMaterialError('Please fill all required fields.');
@@ -322,7 +408,7 @@ export default function LibraryPage() {
                       <TableHead>Category</TableHead>
                       <TableHead>Copies</TableHead>
                       <TableHead>Status</TableHead>
-                      {canDelete && <TableHead className="text-right">Actions</TableHead>}
+                      {canManage && <TableHead className="text-right">Actions</TableHead>}
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -337,18 +423,24 @@ export default function LibraryPage() {
                         <TableCell>
                           <Badge variant={b.isActive ? 'success' : 'secondary'}>{b.isActive ? 'Active' : 'Inactive'}</Badge>
                         </TableCell>
-                        {canDelete && (
+                        {canManage && (
                           <TableCell className="text-right">
-                            {b.isActive && (
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                className="text-destructive hover:bg-destructive/10 hover:text-destructive"
-                                onClick={() => setDeactivateBook(b)}
-                              >
-                                <Trash2 className="h-4 w-4" />
+                            <div className="flex items-center justify-end gap-1">
+                              <Button variant="ghost" size="sm" onClick={() => openEditBookDialog(b)}>
+                                <Pencil className="h-4 w-4" />
+                                Edit
                               </Button>
-                            )}
+                              {canDelete && b.isActive && (
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  className="text-destructive hover:bg-destructive/10 hover:text-destructive"
+                                  onClick={() => setDeactivateBook(b)}
+                                >
+                                  <Trash2 className="h-4 w-4" />
+                                </Button>
+                              )}
+                            </div>
                           </TableCell>
                         )}
                       </TableRow>
@@ -574,14 +666,20 @@ export default function LibraryPage() {
                         <TableCell className="text-muted-foreground">{m.uploadedBy?.fullName}</TableCell>
                         <TableCell className="text-right">
                           {canShareMaterial && (
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              className="text-destructive hover:bg-destructive/10 hover:text-destructive"
-                              onClick={() => setDeleteMaterial(m)}
-                            >
-                              <Trash2 className="h-4 w-4" />
-                            </Button>
+                            <div className="flex items-center justify-end gap-1">
+                              <Button variant="ghost" size="sm" onClick={() => openEditMaterialDialog(m)}>
+                                <Pencil className="h-4 w-4" />
+                                Edit
+                              </Button>
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                className="text-destructive hover:bg-destructive/10 hover:text-destructive"
+                                onClick={() => setDeleteMaterial(m)}
+                              >
+                                <Trash2 className="h-4 w-4" />
+                              </Button>
+                            </div>
                           )}
                         </TableCell>
                       </TableRow>
@@ -594,17 +692,25 @@ export default function LibraryPage() {
         </TabsContent>
       </Tabs>
 
-      {/* Add book dialog */}
-      <Dialog open={bookOpen} onOpenChange={setBookOpen}>
+      {/* Add/Edit book dialog */}
+      <Dialog
+        open={bookOpen}
+        onOpenChange={(open) => {
+          setBookOpen(open);
+          if (!open) setEditingBookId(null);
+        }}
+      >
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Add Book</DialogTitle>
-            <DialogDescription>Add a title to the library catalog.</DialogDescription>
+            <DialogTitle>{editingBookId ? 'Edit Book' : 'Add Book'}</DialogTitle>
+            <DialogDescription>
+              {editingBookId ? "Update this title's details in the library catalog." : 'Add a title to the library catalog.'}
+            </DialogDescription>
           </DialogHeader>
           <form onSubmit={submitBook} className="space-y-4">
             {isUnrestricted && (
               <Field label="School" required>
-                <Select value={bookForm.schoolId} onValueChange={(v) => setBookForm((f) => ({ ...f, schoolId: v }))}>
+                <Select value={bookForm.schoolId} onValueChange={(v) => setBookForm((f) => ({ ...f, schoolId: v }))} disabled={!!editingBookId}>
                   <SelectTrigger>
                     <SelectValue placeholder="Select school" />
                   </SelectTrigger>
@@ -642,11 +748,18 @@ export default function LibraryPage() {
               <div className="rounded-lg border border-destructive/20 bg-destructive/5 px-3 py-2 text-sm text-destructive">{bookError}</div>
             )}
             <DialogFooter>
-              <Button type="button" variant="outline" onClick={() => setBookOpen(false)}>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => {
+                  setBookOpen(false);
+                  setEditingBookId(null);
+                }}
+              >
                 Cancel
               </Button>
-              <Button type="submit" loading={createBook.isPending}>
-                Add Book
+              <Button type="submit" loading={editingBookId ? updateBook.isPending : createBook.isPending}>
+                {editingBookId ? 'Save Changes' : 'Add Book'}
               </Button>
             </DialogFooter>
           </form>
@@ -709,17 +822,31 @@ export default function LibraryPage() {
         </DialogContent>
       </Dialog>
 
-      {/* Share material dialog */}
-      <Dialog open={materialOpen} onOpenChange={setMaterialOpen}>
+      {/* Add/Edit study material dialog */}
+      <Dialog
+        open={materialOpen}
+        onOpenChange={(open) => {
+          setMaterialOpen(open);
+          if (!open) setEditingMaterialId(null);
+        }}
+      >
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Share Study Material</DialogTitle>
-            <DialogDescription>Paste a link to a document or video (Google Drive, YouTube, etc.).</DialogDescription>
+            <DialogTitle>{editingMaterialId ? 'Edit Study Material' : 'Share Study Material'}</DialogTitle>
+            <DialogDescription>
+              {editingMaterialId
+                ? 'Update the link, class, subject, or type of this study material.'
+                : 'Paste a link to a document or video (Google Drive, YouTube, etc.).'}
+            </DialogDescription>
           </DialogHeader>
           <form onSubmit={submitMaterial} className="space-y-4">
             {isUnrestricted && (
               <Field label="School" required>
-                <Select value={materialForm.schoolId} onValueChange={(v) => setMaterialForm((f) => ({ ...f, schoolId: v }))}>
+                <Select
+                  value={materialForm.schoolId}
+                  onValueChange={(v) => setMaterialForm((f) => ({ ...f, schoolId: v }))}
+                  disabled={!!editingMaterialId}
+                >
                   <SelectTrigger>
                     <SelectValue placeholder="Select school" />
                   </SelectTrigger>
@@ -793,11 +920,18 @@ export default function LibraryPage() {
               <div className="rounded-lg border border-destructive/20 bg-destructive/5 px-3 py-2 text-sm text-destructive">{materialError}</div>
             )}
             <DialogFooter>
-              <Button type="button" variant="outline" onClick={() => setMaterialOpen(false)}>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => {
+                  setMaterialOpen(false);
+                  setEditingMaterialId(null);
+                }}
+              >
                 Cancel
               </Button>
-              <Button type="submit" loading={createMaterial.isPending}>
-                Share
+              <Button type="submit" loading={editingMaterialId ? updateMaterial.isPending : createMaterial.isPending}>
+                {editingMaterialId ? 'Save Changes' : 'Share'}
               </Button>
             </DialogFooter>
           </form>

@@ -1,6 +1,6 @@
 import { FormEvent, useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Download, Eye, Plus, Trash2, TrendingDown, TrendingUp, Wallet } from 'lucide-react';
+import { Download, Eye, Pencil, Plus, Trash2, TrendingDown, TrendingUp, Wallet } from 'lucide-react';
 import { api, ApiError } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
@@ -90,12 +90,25 @@ export default function FinancePage() {
   const [incomeOpen, setIncomeOpen] = useState(false);
   const [incomeForm, setIncomeForm] = useState<MoneyForm>(EMPTY_MONEY);
   const [incomeError, setIncomeError] = useState<string | null>(null);
+  const [editingIncomeId, setEditingIncomeId] = useState<string | null>(null);
   const createIncome = useMutation({
     mutationFn: (payload: Record<string, unknown>) => api.post('/income', payload),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['income'] });
       queryClient.invalidateQueries({ queryKey: ['finance-report'] });
       setIncomeOpen(false);
+      setIncomeForm(EMPTY_MONEY);
+      setIncomeError(null);
+    },
+    onError: (err: unknown) => setIncomeError(err instanceof ApiError ? err.body?.message ?? err.message : 'Something went wrong'),
+  });
+  const updateIncome = useMutation({
+    mutationFn: (payload: Record<string, unknown>) => api.patch(`/income/${editingIncomeId}`, payload),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['income'] });
+      queryClient.invalidateQueries({ queryKey: ['finance-report'] });
+      setIncomeOpen(false);
+      setEditingIncomeId(null);
       setIncomeForm(EMPTY_MONEY);
       setIncomeError(null);
     },
@@ -115,12 +128,25 @@ export default function FinancePage() {
   const [expenseOpen, setExpenseOpen] = useState(false);
   const [expenseForm, setExpenseForm] = useState<MoneyForm>(EMPTY_MONEY);
   const [expenseError, setExpenseError] = useState<string | null>(null);
+  const [editingExpenseId, setEditingExpenseId] = useState<string | null>(null);
   const createExpense = useMutation({
     mutationFn: (payload: Record<string, unknown>) => api.post('/expenses', payload),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['expenses'] });
       queryClient.invalidateQueries({ queryKey: ['finance-report'] });
       setExpenseOpen(false);
+      setExpenseForm(EMPTY_MONEY);
+      setExpenseError(null);
+    },
+    onError: (err: unknown) => setExpenseError(err instanceof ApiError ? err.body?.message ?? err.message : 'Something went wrong'),
+  });
+  const updateExpense = useMutation({
+    mutationFn: (payload: Record<string, unknown>) => api.patch(`/expenses/${editingExpenseId}`, payload),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['expenses'] });
+      queryClient.invalidateQueries({ queryKey: ['finance-report'] });
+      setExpenseOpen(false);
+      setEditingExpenseId(null);
       setExpenseForm(EMPTY_MONEY);
       setExpenseError(null);
     },
@@ -137,13 +163,41 @@ export default function FinancePage() {
   const [deleteExpenseTarget, setDeleteExpenseTarget] = useState<ExpenseRecord | null>(null);
 
   function openIncomeDialog() {
+    setEditingIncomeId(null);
     setIncomeForm({ ...EMPTY_MONEY, schoolId: isUnrestricted ? '' : user?.schoolId ?? '' });
+    setIncomeError(null);
+    setIncomeOpen(true);
+  }
+  function openEditIncomeDialog(r: IncomeRecord) {
+    setEditingIncomeId(r.id);
+    setIncomeForm({
+      schoolId: r.schoolId,
+      branchId: r.branchId ?? '',
+      category: r.category,
+      amount: String(r.amount),
+      date: r.date.slice(0, 10),
+      description: r.description ?? '',
+    });
     setIncomeError(null);
     setIncomeOpen(true);
   }
   function submitIncome(e: FormEvent) {
     e.preventDefault();
     setIncomeError(null);
+    if (editingIncomeId) {
+      if (!incomeForm.category || !incomeForm.amount || !incomeForm.date) {
+        setIncomeError('Please fill all required fields.');
+        return;
+      }
+      updateIncome.mutate({
+        branchId: incomeForm.branchId || undefined,
+        category: incomeForm.category,
+        amount: Number(incomeForm.amount),
+        date: incomeForm.date,
+        description: incomeForm.description || undefined,
+      });
+      return;
+    }
     const effectiveSchoolId = isUnrestricted ? incomeForm.schoolId : user?.schoolId;
     if (!effectiveSchoolId || !incomeForm.category || !incomeForm.amount || !incomeForm.date) {
       setIncomeError('Please fill all required fields.');
@@ -160,13 +214,41 @@ export default function FinancePage() {
   }
 
   function openExpenseDialog() {
+    setEditingExpenseId(null);
     setExpenseForm({ ...EMPTY_MONEY, schoolId: isUnrestricted ? '' : user?.schoolId ?? '' });
+    setExpenseError(null);
+    setExpenseOpen(true);
+  }
+  function openEditExpenseDialog(r: ExpenseRecord) {
+    setEditingExpenseId(r.id);
+    setExpenseForm({
+      schoolId: r.schoolId,
+      branchId: r.branchId ?? '',
+      category: r.category,
+      amount: String(r.amount),
+      date: r.date.slice(0, 10),
+      description: r.description ?? '',
+    });
     setExpenseError(null);
     setExpenseOpen(true);
   }
   function submitExpense(e: FormEvent) {
     e.preventDefault();
     setExpenseError(null);
+    if (editingExpenseId) {
+      if (!expenseForm.category || !expenseForm.amount || !expenseForm.date) {
+        setExpenseError('Please fill all required fields.');
+        return;
+      }
+      updateExpense.mutate({
+        branchId: expenseForm.branchId || undefined,
+        category: expenseForm.category,
+        amount: Number(expenseForm.amount),
+        date: expenseForm.date,
+        description: expenseForm.description || undefined,
+      });
+      return;
+    }
     const effectiveSchoolId = isUnrestricted ? expenseForm.schoolId : user?.schoolId;
     if (!effectiveSchoolId || !expenseForm.category || !expenseForm.amount || !expenseForm.date) {
       setExpenseError('Please fill all required fields.');
@@ -342,6 +424,11 @@ export default function FinancePage() {
                             <Button variant="ghost" size="sm" onClick={() => api.downloadBlob(`/income/${r.id}/voucher.pdf`, `income-voucher-${r.id}.pdf`)}>
                               <Download className="h-4 w-4" />
                             </Button>
+                            {canManage && (
+                              <Button variant="ghost" size="sm" onClick={() => openEditIncomeDialog(r)}>
+                                <Pencil className="h-4 w-4" />
+                              </Button>
+                            )}
                             {canDelete && (
                               <Button variant="ghost" size="sm" className="text-destructive hover:bg-destructive/10 hover:text-destructive" onClick={() => setDeleteIncomeTarget(r)}>
                                 <Trash2 className="h-4 w-4" />
@@ -426,6 +513,11 @@ export default function FinancePage() {
                             <Button variant="ghost" size="sm" onClick={() => api.downloadBlob(`/expenses/${r.id}/voucher.pdf`, `expense-voucher-${r.id}.pdf`)}>
                               <Download className="h-4 w-4" />
                             </Button>
+                            {canManage && (
+                              <Button variant="ghost" size="sm" onClick={() => openEditExpenseDialog(r)}>
+                                <Pencil className="h-4 w-4" />
+                              </Button>
+                            )}
                             {canDelete && (
                               <Button variant="ghost" size="sm" className="text-destructive hover:bg-destructive/10 hover:text-destructive" onClick={() => setDeleteExpenseTarget(r)}>
                                 <Trash2 className="h-4 w-4" />
@@ -583,16 +675,28 @@ export default function FinancePage() {
       </Tabs>
 
       {/* Income dialog */}
-      <Dialog open={incomeOpen} onOpenChange={setIncomeOpen}>
+      <Dialog
+        open={incomeOpen}
+        onOpenChange={(open) => {
+          setIncomeOpen(open);
+          if (!open) setEditingIncomeId(null);
+        }}
+      >
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Add Income</DialogTitle>
-            <DialogDescription>Record money received under any category.</DialogDescription>
+            <DialogTitle>{editingIncomeId ? 'Edit Income' : 'Add Income'}</DialogTitle>
+            <DialogDescription>
+              {editingIncomeId ? 'Update this income record.' : 'Record money received under any category.'}
+            </DialogDescription>
           </DialogHeader>
           <form onSubmit={submitIncome} className="space-y-4">
             {isUnrestricted && (
               <Field label="School" required>
-                <Select value={incomeForm.schoolId} onValueChange={(v) => setIncomeForm((f) => ({ ...f, schoolId: v, branchId: '' }))}>
+                <Select
+                  value={incomeForm.schoolId}
+                  onValueChange={(v) => setIncomeForm((f) => ({ ...f, schoolId: v, branchId: '' }))}
+                  disabled={!!editingIncomeId}
+                >
                   <SelectTrigger><SelectValue placeholder="Select school" /></SelectTrigger>
                   <SelectContent>
                     {(schoolsQuery.data ?? []).map((s) => <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>)}
@@ -626,24 +730,47 @@ export default function FinancePage() {
             </Field>
             {incomeError && <div className="rounded-lg border border-destructive/20 bg-destructive/5 px-3 py-2 text-sm text-destructive">{incomeError}</div>}
             <DialogFooter>
-              <Button type="button" variant="outline" onClick={() => setIncomeOpen(false)}>Cancel</Button>
-              <Button type="submit" loading={createIncome.isPending}>Add Income</Button>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => {
+                  setIncomeOpen(false);
+                  setEditingIncomeId(null);
+                }}
+              >
+                Cancel
+              </Button>
+              <Button type="submit" loading={editingIncomeId ? updateIncome.isPending : createIncome.isPending}>
+                {editingIncomeId ? 'Save Changes' : 'Add Income'}
+              </Button>
             </DialogFooter>
           </form>
         </DialogContent>
       </Dialog>
 
       {/* Expense dialog */}
-      <Dialog open={expenseOpen} onOpenChange={setExpenseOpen}>
+      <Dialog
+        open={expenseOpen}
+        onOpenChange={(open) => {
+          setExpenseOpen(open);
+          if (!open) setEditingExpenseId(null);
+        }}
+      >
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Add Expense</DialogTitle>
-            <DialogDescription>Record money spent under any category.</DialogDescription>
+            <DialogTitle>{editingExpenseId ? 'Edit Expense' : 'Add Expense'}</DialogTitle>
+            <DialogDescription>
+              {editingExpenseId ? 'Update this expense record.' : 'Record money spent under any category.'}
+            </DialogDescription>
           </DialogHeader>
           <form onSubmit={submitExpense} className="space-y-4">
             {isUnrestricted && (
               <Field label="School" required>
-                <Select value={expenseForm.schoolId} onValueChange={(v) => setExpenseForm((f) => ({ ...f, schoolId: v, branchId: '' }))}>
+                <Select
+                  value={expenseForm.schoolId}
+                  onValueChange={(v) => setExpenseForm((f) => ({ ...f, schoolId: v, branchId: '' }))}
+                  disabled={!!editingExpenseId}
+                >
                   <SelectTrigger><SelectValue placeholder="Select school" /></SelectTrigger>
                   <SelectContent>
                     {(schoolsQuery.data ?? []).map((s) => <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>)}
@@ -677,8 +804,19 @@ export default function FinancePage() {
             </Field>
             {expenseError && <div className="rounded-lg border border-destructive/20 bg-destructive/5 px-3 py-2 text-sm text-destructive">{expenseError}</div>}
             <DialogFooter>
-              <Button type="button" variant="outline" onClick={() => setExpenseOpen(false)}>Cancel</Button>
-              <Button type="submit" loading={createExpense.isPending}>Add Expense</Button>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => {
+                  setExpenseOpen(false);
+                  setEditingExpenseId(null);
+                }}
+              >
+                Cancel
+              </Button>
+              <Button type="submit" loading={editingExpenseId ? updateExpense.isPending : createExpense.isPending}>
+                {editingExpenseId ? 'Save Changes' : 'Add Expense'}
+              </Button>
             </DialogFooter>
           </form>
         </DialogContent>
