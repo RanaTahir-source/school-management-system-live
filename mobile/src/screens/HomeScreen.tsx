@@ -3,6 +3,7 @@ import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { useAuth } from '@/lib/auth';
 import { useMyStudent } from '@/lib/useMyStudent';
 import { useMyChildren } from '@/lib/useMyChildren';
+import { useSchoolStats } from '@/lib/useSchoolStats';
 import { colors } from '@/lib/theme';
 import type { RootStackParamList } from '@/navigation/RootNavigator';
 
@@ -14,12 +15,28 @@ const STUDENT_MENU = [
   { key: 'Result', title: 'Results', subtitle: 'Exams & report cards', icon: '🎓' },
 ] as const;
 
+const TEACHER_MENU = [
+  { key: 'Timetable', title: 'My Timetable', subtitle: 'Your weekly teaching schedule', icon: '🗓️' },
+  { key: 'MarkAttendance', title: 'Mark Attendance', subtitle: "Today's class you're the class teacher of", icon: '✅' },
+  { key: 'Leave', title: 'Leave Requests', subtitle: 'Apply for leave & track status', icon: '📝' },
+  { key: 'Announcements', title: 'Announcements', subtitle: 'Latest notices from the school', icon: '📣' },
+] as const;
+
+const PRINCIPAL_MENU = [
+  { key: 'StaffDirectory', title: 'Staff Directory', subtitle: 'Browse teachers by name or ID', icon: '👥' },
+  { key: 'Leave', title: 'Leave Requests', subtitle: 'Approve, reject & apply for leave', icon: '📝' },
+  { key: 'Announcements', title: 'Announcements', subtitle: 'Latest notices from the school', icon: '📣' },
+] as const;
+
 export default function HomeScreen({ navigation }: { navigation: Nav }) {
   const { user, hasRole, logout } = useAuth();
   const { student } = useMyStudent();
   const isStudent = hasRole('STUDENT');
   const isParent = hasRole('PARENT');
+  const isPrincipalStaff = hasRole('DIRECTOR', 'ADMIN', 'PRINCIPAL');
+  const isTeacher = hasRole('TEACHER');
   const children = useMyChildren();
+  const { stats, error: statsError } = useSchoolStats();
 
   return (
     <ScrollView style={styles.container} contentContainerStyle={{ paddingBottom: 40 }}>
@@ -116,13 +133,50 @@ export default function HomeScreen({ navigation }: { navigation: Nav }) {
             </>
           )}
         </View>
+      ) : isPrincipalStaff ? (
+        <View style={styles.menu}>
+          {statsError ? (
+            <Text style={styles.errorText}>{statsError}</Text>
+          ) : !stats ? (
+            <ActivityIndicator color={colors.green} style={{ marginBottom: 4 }} />
+          ) : (
+            <View style={styles.statsGrid}>
+              <StatBox label="Students" value={String(stats.studentCount)} />
+              <StatBox label="Teachers" value={String(stats.teacherCount)} />
+              <StatBox label="Pending leave" value={String(stats.pendingLeave)} tone={stats.pendingLeave > 0 ? colors.warning : undefined} />
+              <StatBox label="Today's attendance" value={stats.attendancePct !== null ? `${stats.attendancePct}%` : '—'} />
+            </View>
+          )}
+          {PRINCIPAL_MENU.map((item) => (
+            <TouchableOpacity key={item.key} style={styles.card} onPress={() => navigation.navigate(item.key as any)}>
+              <Text style={styles.cardIcon}>{item.icon}</Text>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.cardTitle}>{item.title}</Text>
+                <Text style={styles.cardSubtitle}>{item.subtitle}</Text>
+              </View>
+              <Text style={styles.chevron}>›</Text>
+            </TouchableOpacity>
+          ))}
+        </View>
+      ) : isTeacher ? (
+        <View style={styles.menu}>
+          {TEACHER_MENU.map((item) => (
+            <TouchableOpacity key={item.key} style={styles.card} onPress={() => navigation.navigate(item.key as any)}>
+              <Text style={styles.cardIcon}>{item.icon}</Text>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.cardTitle}>{item.title}</Text>
+                <Text style={styles.cardSubtitle}>{item.subtitle}</Text>
+              </View>
+              <Text style={styles.chevron}>›</Text>
+            </TouchableOpacity>
+          ))}
+        </View>
       ) : (
         <View style={styles.staffNotice}>
-          <Text style={styles.staffNoticeTitle}>Staff features coming soon</Text>
+          <Text style={styles.staffNoticeTitle}>This role isn't supported on mobile yet</Text>
           <Text style={styles.staffNoticeBody}>
-            The mobile app currently supports student and parent self-service (fee status, attendance, result
-            cards). For marking attendance, entering marks, and admin tools, please continue using the web
-            portal for now.
+            The mobile app currently supports Student, Parent, Teacher, Principal, Admin, and Director accounts.
+            Please continue using the web portal for now.
           </Text>
         </View>
       )}
@@ -131,6 +185,15 @@ export default function HomeScreen({ navigation }: { navigation: Nav }) {
         <Text style={styles.logoutText}>Log Out</Text>
       </TouchableOpacity>
     </ScrollView>
+  );
+}
+
+function StatBox({ label, value, tone }: { label: string; value: string; tone?: string }) {
+  return (
+    <View style={styles.statBox}>
+      <Text style={[styles.statValue, tone ? { color: tone } : null]}>{value}</Text>
+      <Text style={styles.statLabel}>{label}</Text>
+    </View>
   );
 }
 
@@ -164,4 +227,16 @@ const styles = StyleSheet.create({
   staffNoticeBody: { fontSize: 13, color: colors.textMuted, lineHeight: 19 },
   logout: { marginTop: 8, marginHorizontal: 20, paddingVertical: 14, alignItems: 'center' },
   logoutText: { color: colors.danger, fontWeight: '600', fontSize: 14 },
+  statsGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 12, marginBottom: 4 },
+  statBox: {
+    width: '47%',
+    alignItems: 'center',
+    paddingVertical: 18,
+    backgroundColor: colors.card,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  statValue: { fontSize: 24, fontWeight: '700', color: colors.text },
+  statLabel: { fontSize: 12, color: colors.textMuted, marginTop: 4, textAlign: 'center' },
 });

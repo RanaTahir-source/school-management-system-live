@@ -1326,3 +1326,176 @@ export type ChatThread = {
   lastMessage?: ChatMessage | null;
   unreadCount?: number;
 };
+
+// ─────────────────────────────────────────────
+// PREDICTIVE AI ANALYTICS  (Milestone 14)
+// ─────────────────────────────────────────────
+export type RiskLevel = 'LOW' | 'MEDIUM' | 'HIGH';
+
+export type FeeDefaultRiskStudent = {
+  studentId: string;
+  fullName: string;
+  admissionNo: string;
+  className: string | null;
+  sectionName: string | null;
+  overdueInvoices: number;
+  overdueAmount: number;
+  consecutiveUnpaidMonths: number;
+  riskScore: number;
+  riskLevel: RiskLevel;
+};
+
+export type FeeDefaultRiskReport = {
+  generatedAt: string;
+  windowMonths: number;
+  studentsFlagged: number;
+  highRiskCount: number;
+  mediumRiskCount: number;
+  students: FeeDefaultRiskStudent[];
+};
+
+export type AttendanceAnomaly = {
+  studentId: string;
+  fullName: string;
+  admissionNo: string;
+  className: string | null;
+  sectionName: string | null;
+  recentAbsentRatePct: number;
+  baselineAbsentRatePct: number;
+  consecutiveAbsentDays: number;
+  severity: RiskLevel;
+  reason: string;
+};
+
+export type AttendanceAnomalyReport = {
+  generatedAt: string;
+  windowDays: { recent: number; baseline: number };
+  alertsCount: number;
+  alerts: AttendanceAnomaly[];
+};
+
+export type ExamRiskStudent = {
+  studentId: string;
+  fullName: string;
+  admissionNo: string;
+  className: string | null;
+  sectionName: string | null;
+  latestScorePct: number;
+  previousScorePct: number | null;
+  failedSubjects: number;
+  absentPapers: number;
+  riskScore: number;
+  riskLevel: RiskLevel;
+};
+
+export type ExamRiskReport = {
+  generatedAt: string;
+  latestExam: { id: string; name: string } | null;
+  previousExam: { id: string; name: string } | null;
+  studentsFlagged: number;
+  students: ExamRiskStudent[];
+};
+
+export type TeacherEfficiencyEntry = {
+  teacherId: string;
+  fullName: string;
+  employeeId: string | null;
+  subjectsTaught: number;
+  sectionsTaught: number;
+  avgScorePct: number | null;
+  passRatePct: number | null;
+  classTeacherOf: string | null;
+  attendanceMarkingRatePct: number | null;
+  efficiencyScore: number | null;
+};
+
+export type TeacherEfficiencyReport = {
+  generatedAt: string;
+  latestExam: string | null;
+  note: string;
+  teachers: TeacherEfficiencyEntry[];
+};
+
+export type LearningReport = {
+  generatedAt: string;
+  student: { id: string; fullName: string; admissionNo: string; className: string | null; sectionName: string | null };
+  attendance: {
+    windowDays: number;
+    presentCount: number;
+    absentCount: number;
+    lateCount: number;
+    leaveCount: number;
+    attendanceRatePct: number | null;
+  };
+  examTrend: { examName: string; scorePct: number | null; failedSubjects: number; subjects: { name: string; pct: number }[] }[];
+  feeStatus: { totalDueRecentPeriods: number; overdueInvoices: number };
+  summary: string;
+};
+
+// ─────────────────────────────────────────────
+// HOUSES  (Milestone 15)
+// ─────────────────────────────────────────────
+export type House = {
+  id: string;
+  schoolId: string;
+  name: string;
+  colorHex: string | null;
+  isActive: boolean;
+  inChargeId: string | null;
+  inCharge?: { id: string; fullName: string } | null;
+  totalPoints: number;
+  _count?: { students: number };
+};
+
+export type HousePointEntry = {
+  id: string;
+  houseId: string;
+  points: number;
+  reason: string;
+  category: string | null;
+  date: string;
+  awardedBy?: { fullName: string };
+};
+
+export type HouseDetail = House & {
+  students: { id: string; admissionNo: string; user: { fullName: string }; section?: { name: string; class?: { name: string } | null } | null }[];
+  pointEntries: HousePointEntry[];
+};
+
+// ─────────────────────────────────────────────
+// CHART OF ACCOUNTS  (Milestone 15)
+// ─────────────────────────────────────────────
+export type AccountType = 'ASSET' | 'LIABILITY' | 'EQUITY' | 'INCOME' | 'EXPENSE';
+
+export type AccountHead = {
+  id: string;
+  schoolId: string;
+  name: string;
+  code: string | null;
+  type: AccountType;
+  parentId: string | null;
+  parent?: { id: string; name: string } | null;
+  isActive: boolean;
+  _count?: { children: number; incomeRecords: number; expenseRecords: number };
+};
+
+export type LedgerSummaryHead = {
+  id: string;
+  name: string;
+  code: string | null;
+  type: AccountType;
+  parentId: string | null;
+  incomeTotal: number;
+  expenseTotal: number;
+};
+
+export type LedgerSummaryReport = {
+  generatedAt: string;
+  range: { from: string | null; to: string | null };
+  totalIncome: number;
+  totalExpense: number;
+  net: number;
+  unassignedIncome: number;
+  unassignedExpense: number;
+  accountHeads: LedgerSummaryHead[];
+};

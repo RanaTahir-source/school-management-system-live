@@ -1,6 +1,6 @@
 import { FormEvent, useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { CalendarRange, Layers, Plus, Rows3 } from 'lucide-react';
+import { CalendarRange, Layers, Pencil, Plus, Rows3, Trash2 } from 'lucide-react';
 import { api, ApiError } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
 import { Card, CardContent } from '@/components/ui/card';
@@ -27,6 +27,7 @@ import {
   DialogFooter,
 } from '@/components/ui/dialog';
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from '@/components/ui/select';
+import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { formatDate } from '@/lib/utils';
 import type { School, ClassRecord, SectionRecord, AcademicYear, TeacherProfile } from '@/types';
 
@@ -79,6 +80,8 @@ export default function AcademicsPage() {
   const [yearOpen, setYearOpen] = useState(false);
   const [yearForm, setYearForm] = useState({ schoolId: '', name: '', startDate: '', endDate: '' });
   const [yearError, setYearError] = useState<string | null>(null);
+  const [editingYearId, setEditingYearId] = useState<string | null>(null);
+  const [deleteYearTarget, setDeleteYearTarget] = useState<AcademicYear | null>(null);
   const createYear = useMutation({
     mutationFn: (payload: Record<string, unknown>) => api.post('/academic-years', payload),
     onSuccess: () => {
@@ -88,6 +91,24 @@ export default function AcademicsPage() {
       setYearError(null);
     },
     onError: (err: unknown) => setYearError(err instanceof ApiError ? err.body?.message ?? err.message : 'Something went wrong'),
+  });
+  const updateYear = useMutation({
+    mutationFn: (payload: Record<string, unknown>) => api.patch(`/academic-years/${editingYearId}`, payload),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['academic-years'] });
+      setYearOpen(false);
+      setEditingYearId(null);
+      setYearForm({ schoolId: '', name: '', startDate: '', endDate: '' });
+      setYearError(null);
+    },
+    onError: (err: unknown) => setYearError(err instanceof ApiError ? err.body?.message ?? err.message : 'Something went wrong'),
+  });
+  const deleteYear = useMutation({
+    mutationFn: (id: string) => api.delete(`/academic-years/${id}`),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['academic-years'] });
+      setDeleteYearTarget(null);
+    },
   });
 
   // ---- Class dialog ----
@@ -132,7 +153,19 @@ export default function AcademicsPage() {
   }, [schoolsQuery.data, classForm.schoolId, isUnrestricted, user?.schoolId]);
 
   function openYearDialog() {
+    setEditingYearId(null);
     setYearForm({ schoolId: isUnrestricted ? '' : user?.schoolId ?? '', name: '', startDate: '', endDate: '' });
+    setYearError(null);
+    setYearOpen(true);
+  }
+  function openEditYearDialog(year: AcademicYear) {
+    setEditingYearId(year.id);
+    setYearForm({
+      schoolId: year.schoolId,
+      name: year.name,
+      startDate: year.startDate.slice(0, 10),
+      endDate: year.endDate.slice(0, 10),
+    });
     setYearError(null);
     setYearOpen(true);
   }
@@ -144,12 +177,20 @@ export default function AcademicsPage() {
       setYearError('Please fill all required fields.');
       return;
     }
-    createYear.mutate({
-      schoolId: effectiveSchoolId,
-      name: yearForm.name,
-      startDate: yearForm.startDate,
-      endDate: yearForm.endDate,
-    });
+    if (editingYearId) {
+      updateYear.mutate({
+        name: yearForm.name,
+        startDate: yearForm.startDate,
+        endDate: yearForm.endDate,
+      });
+    } else {
+      createYear.mutate({
+        schoolId: effectiveSchoolId,
+        name: yearForm.name,
+        startDate: yearForm.startDate,
+        endDate: yearForm.endDate,
+      });
+    }
   }
 
   function openClassDialog() {
@@ -236,6 +277,7 @@ export default function AcademicsPage() {
                       <TableHead>Start Date</TableHead>
                       <TableHead>End Date</TableHead>
                       <TableHead>Status</TableHead>
+                      {canManage && <TableHead className="text-right">Actions</TableHead>}
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -250,6 +292,26 @@ export default function AcademicsPage() {
                             {y.isActive ? 'Active' : 'Inactive'}
                           </Badge>
                         </TableCell>
+                        {canManage && (
+                          <TableCell className="text-right">
+                            <div className="flex items-center justify-end gap-1">
+                              <Button variant="ghost" size="sm" onClick={() => openEditYearDialog(y)}>
+                                <Pencil className="h-4 w-4" />
+                                Edit
+                              </Button>
+                              {isUnrestricted && (
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  className="text-destructive hover:bg-destructive/10 hover:text-destructive"
+                                  onClick={() => setDeleteYearTarget(y)}
+                                >
+                                  <Trash2 className="h-4 w-4" />
+                                </Button>
+                              )}
+                            </div>
+                          </TableCell>
+                        )}
                       </TableRow>
                     ))}
                   </TableBody>
@@ -361,16 +423,26 @@ export default function AcademicsPage() {
       </Tabs>
 
       {/* Academic Year dialog */}
-      <Dialog open={yearOpen} onOpenChange={setYearOpen}>
+      <Dialog
+        open={yearOpen}
+        onOpenChange={(open) => {
+          setYearOpen(open);
+          if (!open) setEditingYearId(null);
+        }}
+      >
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Add Academic Year</DialogTitle>
+            <DialogTitle>{editingYearId ? 'Edit Academic Year' : 'Add Academic Year'}</DialogTitle>
             <DialogDescription>Define a school year with its start and end dates.</DialogDescription>
           </DialogHeader>
           <form onSubmit={submitYear} className="space-y-4">
             {isUnrestricted && (
               <Field label="School" required>
-                <Select value={yearForm.schoolId} onValueChange={(v) => setYearForm((f) => ({ ...f, schoolId: v }))}>
+                <Select
+                  value={yearForm.schoolId}
+                  onValueChange={(v) => setYearForm((f) => ({ ...f, schoolId: v }))}
+                  disabled={!!editingYearId}
+                >
                   <SelectTrigger>
                     <SelectValue placeholder="Select school" />
                   </SelectTrigger>
@@ -416,16 +488,33 @@ export default function AcademicsPage() {
               </div>
             )}
             <DialogFooter>
-              <Button type="button" variant="outline" onClick={() => setYearOpen(false)}>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => {
+                  setYearOpen(false);
+                  setEditingYearId(null);
+                }}
+              >
                 Cancel
               </Button>
-              <Button type="submit" loading={createYear.isPending}>
-                Create
+              <Button type="submit" loading={editingYearId ? updateYear.isPending : createYear.isPending}>
+                {editingYearId ? 'Save Changes' : 'Create'}
               </Button>
             </DialogFooter>
           </form>
         </DialogContent>
       </Dialog>
+
+      <ConfirmDialog
+        open={!!deleteYearTarget}
+        onOpenChange={(open) => !open && setDeleteYearTarget(null)}
+        title="Delete academic year?"
+        description={`This will permanently remove "${deleteYearTarget?.name}". Classes, sections, or records linked to this year may be affected.`}
+        confirmLabel="Delete"
+        loading={deleteYear.isPending}
+        onConfirm={() => deleteYearTarget && deleteYear.mutate(deleteYearTarget.id)}
+      />
 
       {/* Class dialog */}
       <Dialog open={classOpen} onOpenChange={setClassOpen}>

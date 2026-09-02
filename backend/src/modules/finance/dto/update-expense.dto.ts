@@ -6,6 +6,10 @@ export class UpdateExpenseDto {
   branchId?: string;
 
   @IsOptional()
+  @IsUUID()
+  accountHeadId?: string;
+
+  @IsOptional()
   @IsString()
   category?: string;
 

@@ -44,6 +44,9 @@ import { ManualsModule } from './modules/manuals/manuals.module';
 import { ChatModule } from './modules/chat/chat.module';
 import { DepartmentsModule } from './modules/departments/departments.module';
 import { QuizzesModule } from './modules/quizzes/quizzes.module';
+import { AnalyticsModule } from './modules/analytics/analytics.module';
+import { HousesModule } from './modules/houses/houses.module';
+import { AccountsModule } from './modules/accounts/accounts.module';
 
 @Module({
   imports: [
@@ -91,6 +94,9 @@ import { QuizzesModule } from './modules/quizzes/quizzes.module';
     ChatModule,
     DepartmentsModule,
     QuizzesModule,
+    AnalyticsModule,
+    HousesModule,
+    AccountsModule,
     PlatformModule,
   ],
 })

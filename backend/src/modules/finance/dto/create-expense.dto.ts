@@ -17,6 +17,11 @@ export class CreateExpenseDto {
   @IsUUID()
   branchId?: string;
 
+  // Optional formal Chart-of-Accounts tag - see AccountHead.
+  @IsOptional()
+  @IsUUID()
+  accountHeadId?: string;
+
   @IsString()
   @IsNotEmpty()
   category: string;

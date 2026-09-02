@@ -18,6 +18,9 @@ import SchoolsPage from '@/pages/SchoolsPage';
 import AcademicsPage from '@/pages/AcademicsPage';
 import DepartmentsPage from '@/pages/DepartmentsPage';
 import QuizzesPage from '@/pages/QuizzesPage';
+import AnalyticsPage from '@/pages/AnalyticsPage';
+import HousesPage from '@/pages/HousesPage';
+import ChartOfAccountsPage from '@/pages/ChartOfAccountsPage';
 import AttendancePage from '@/pages/AttendancePage';
 import FinancePage from '@/pages/FinancePage';
 import ExamsPage from '@/pages/ExamsPage';
@@ -49,6 +52,9 @@ export default function App() {
           <Route path="/academics" element={<AcademicsPage />} />
           <Route path="/departments" element={<DepartmentsPage />} />
           <Route path="/quizzes" element={<QuizzesPage />} />
+          <Route path="/analytics" element={<AnalyticsPage />} />
+          <Route path="/houses" element={<HousesPage />} />
+          <Route path="/chart-of-accounts" element={<ChartOfAccountsPage />} />
           <Route path="/students" element={<StudentsPage />} />
           <Route path="/admissions" element={<AdmissionsPage />} />
           <Route path="/ai-tools" element={<AiToolsPage />} />

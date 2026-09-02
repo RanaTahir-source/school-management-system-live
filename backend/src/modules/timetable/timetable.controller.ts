@@ -2,6 +2,7 @@ import { Body, Controller, Delete, Get, Param, Patch, Post, UseGuards } from '@n
 import { TimetableService } from './timetable.service';
 import { CreateTimetableSlotDto } from './dto/create-timetable-slot.dto';
 import { UpdateTimetableSlotDto } from './dto/update-timetable-slot.dto';
+import { GenerateTimetableDto } from './dto/generate-timetable.dto';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { RolesGuard } from '../../common/guards/roles.guard';
 import { Roles } from '../../common/decorators/roles.decorator';
@@ -21,6 +22,14 @@ export class TimetableController {
   @Roles(...MANAGE_ROLES)
   create(@Body() dto: CreateTimetableSlotDto, @CurrentUser() user: Requester) {
     return this.service.create(dto, user);
+  }
+
+  // Auto-fills a section's empty timetable cells from a list of subject
+  // requirements (periods/week, optional pinned teacher).
+  @Post('generate')
+  @Roles(...MANAGE_ROLES)
+  generate(@Body() dto: GenerateTimetableDto, @CurrentUser() user: Requester) {
+    return this.service.generate(dto, user);
   }
 
   @Patch(':id')

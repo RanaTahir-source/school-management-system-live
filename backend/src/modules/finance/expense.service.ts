@@ -14,6 +14,7 @@ export class ExpenseService {
       data: {
         schoolId: dto.schoolId,
         branchId: dto.branchId,
+        accountHeadId: dto.accountHeadId,
         category: dto.category,
         amount: dto.amount,
         date: new Date(dto.date),
@@ -44,6 +45,7 @@ export class ExpenseService {
             }
           : {}),
       },
+      include: { accountHead: { select: { id: true, name: true, type: true } } },
       orderBy: { date: 'desc' },
     });
   }

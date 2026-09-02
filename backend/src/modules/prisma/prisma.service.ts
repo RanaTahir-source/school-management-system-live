@@ -368,6 +368,18 @@ export class PrismaService implements OnModuleInit, OnModuleDestroy {
     return this.prisma.quizAnswer;
   }
 
+  get house() {
+    return this.prisma.house;
+  }
+
+  get housePointEntry() {
+    return this.prisma.housePointEntry;
+  }
+
+  get accountHead() {
+    return this.prisma.accountHead;
+  }
+
   // Used only by BackupService to dynamically iterate every model for a
   // full-database export - normal services should always use the named
   // getters above instead of this.

@@ -29,6 +29,9 @@ import {
   MessageCircle,
   Briefcase,
   ClipboardList,
+  TrendingUp,
+  Trophy,
+  Landmark,
 } from 'lucide-react';
 import type { Role } from '@/types';
 
@@ -129,6 +132,12 @@ export const NAV_GROUPS: NavGroup[] = [
         roles: ['DIRECTOR', 'ADMIN', 'ACCOUNTANT', 'PRINCIPAL'],
       },
       {
+        label: 'Chart of Accounts',
+        to: '/chart-of-accounts',
+        icon: Landmark,
+        roles: ['DIRECTOR', 'ADMIN', 'ACCOUNTANT', 'PRINCIPAL'],
+      },
+      {
         label: 'Payroll',
         to: '/payroll',
         icon: Banknote,
@@ -211,6 +220,12 @@ export const NAV_GROUPS: NavGroup[] = [
         roles: ['DIRECTOR', 'ADMIN', 'PRINCIPAL', 'COORDINATOR', 'ACCOUNTANT', 'TEACHER'],
       },
       {
+        label: 'Houses',
+        to: '/houses',
+        icon: Trophy,
+        roles: ['DIRECTOR', 'ADMIN', 'PRINCIPAL', 'COORDINATOR', 'ACCOUNTANT', 'TEACHER', 'STUDENT', 'PARENT', 'LIBRARIAN', 'RECEPTIONIST'],
+      },
+      {
         label: 'Reports',
         to: '/reports',
         icon: BarChart3,
@@ -238,6 +253,12 @@ export const NAV_GROUPS: NavGroup[] = [
         to: '/ai-tools',
         icon: Sparkles,
         roles: ['DIRECTOR', 'ADMIN', 'PRINCIPAL', 'COORDINATOR', 'TEACHER'],
+      },
+      {
+        label: 'Predictive Analytics',
+        to: '/analytics',
+        icon: TrendingUp,
+        roles: ['DIRECTOR', 'ADMIN', 'PRINCIPAL', 'COORDINATOR'],
       },
       {
         label: 'Manuals & SOPs',

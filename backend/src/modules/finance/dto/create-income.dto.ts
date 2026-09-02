@@ -22,6 +22,13 @@ export class CreateIncomeDto {
   @IsUUID()
   studentId?: string;
 
+  // Optional formal Chart-of-Accounts tag - see AccountHead. Free-text
+  // category below still stays required, so nothing changes for schools
+  // that haven't set up account heads yet.
+  @IsOptional()
+  @IsUUID()
+  accountHeadId?: string;
+
   @IsString()
   @IsNotEmpty()
   category: string;

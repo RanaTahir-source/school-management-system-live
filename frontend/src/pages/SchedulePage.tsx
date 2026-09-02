@@ -1,6 +1,6 @@
 import { FormEvent, useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { CalendarClock, BookMarked, ClipboardList, Plus, Trash2, Pencil, Check, X, Video, Ban, ExternalLink } from 'lucide-react';
+import { CalendarClock, BookMarked, ClipboardList, Plus, Trash2, Pencil, Check, X, Video, Ban, ExternalLink, Wand2 } from 'lucide-react';
 import { api, ApiError } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
@@ -76,6 +76,19 @@ const slotForm0 = {
   endTime: '08:40',
   room: '',
 };
+
+type GenSubjectRow = { subjectId: string; periodsPerWeek: string; teacherId: string };
+const genSubjectRow0 = (): GenSubjectRow => ({ subjectId: '', periodsPerWeek: '5', teacherId: '__none__' });
+
+const genForm0 = {
+  workingDays: [1, 2, 3, 4, 5] as number[],
+  periodsPerDay: '7',
+  periodStartTime: '08:00',
+  periodDurationMinutes: '40',
+  replaceExisting: false,
+};
+
+type GenerateTimetableResult = { created: number; warnings: string[] };
 
 const homeworkForm0 = { subjectId: '', title: '', description: '', dueDate: '' };
 const onlineForm0 = { subjectId: '', title: '', description: '', meetingLink: '', scheduledAt: '', durationMinutes: '40' };
@@ -189,6 +202,79 @@ export default function SchedulePage() {
 
   const timetableSlots = canScheduleManage ? timetableSectionQuery.data : timetableMineQuery.data;
   const timetableLoading = canScheduleManage ? timetableSectionQuery.isLoading : timetableMineQuery.isLoading;
+
+  // ─────────────────────── AI-style Timetable Generator ───────────────────────
+  // Deterministic auto-fill: give it subjects + periods/week and it schedules
+  // the section's empty cells, avoiding teacher double-bookings school-wide.
+  const [genOpen, setGenOpen] = useState(false);
+  const [genForm, setGenForm] = useState(genForm0);
+  const [genRows, setGenRows] = useState<GenSubjectRow[]>([genSubjectRow0()]);
+  const [genError, setGenError] = useState<string | null>(null);
+  const [genResult, setGenResult] = useState<GenerateTimetableResult | null>(null);
+
+  const generateTimetable = useMutation({
+    mutationFn: (payload: Record<string, unknown>) => api.post<GenerateTimetableResult>('/timetable/generate', payload),
+    onSuccess: (result) => {
+      queryClient.invalidateQueries({ queryKey: ['timetable'] });
+      setGenResult(result);
+      setGenError(null);
+    },
+    onError: (err: unknown) => setGenError(err instanceof ApiError ? err.body?.message ?? err.message : 'Something went wrong'),
+  });
+
+  function openGenerateDialog() {
+    setGenForm(genForm0);
+    setGenRows([genSubjectRow0()]);
+    setGenError(null);
+    setGenResult(null);
+    setGenOpen(true);
+  }
+  function toggleGenDay(day: number) {
+    setGenForm((f) => ({
+      ...f,
+      workingDays: f.workingDays.includes(day) ? f.workingDays.filter((d) => d !== day) : [...f.workingDays, day].sort((a, b) => a - b),
+    }));
+  }
+  function updateGenRow(index: number, patch: Partial<GenSubjectRow>) {
+    setGenRows((rows) => rows.map((r, i) => (i === index ? { ...r, ...patch } : r)));
+  }
+  function addGenRow() {
+    setGenRows((rows) => [...rows, genSubjectRow0()]);
+  }
+  function removeGenRow(index: number) {
+    setGenRows((rows) => rows.filter((_, i) => i !== index));
+  }
+  function submitGenerate(e: FormEvent) {
+    e.preventDefault();
+    setGenError(null);
+    setGenResult(null);
+    if (!ttSectionId) {
+      setGenError('Please choose a section first.');
+      return;
+    }
+    if (genForm.workingDays.length === 0) {
+      setGenError('Please select at least one working day.');
+      return;
+    }
+    const cleanedRows = genRows.filter((r) => r.subjectId);
+    if (cleanedRows.length === 0) {
+      setGenError('Please add at least one subject.');
+      return;
+    }
+    generateTimetable.mutate({
+      sectionId: ttSectionId,
+      workingDays: genForm.workingDays,
+      periodsPerDay: Number(genForm.periodsPerDay),
+      periodStartTime: genForm.periodStartTime,
+      periodDurationMinutes: Number(genForm.periodDurationMinutes),
+      replaceExisting: genForm.replaceExisting,
+      subjects: cleanedRows.map((r) => ({
+        subjectId: r.subjectId,
+        periodsPerWeek: Number(r.periodsPerWeek) || 1,
+        teacherId: r.teacherId === '__none__' ? undefined : r.teacherId,
+      })),
+    });
+  }
 
   // ─────────────────────────── Homework tab ───────────────────────────
   const [hwSectionId, setHwSectionId] = useState('');
@@ -466,10 +552,16 @@ export default function SchedulePage() {
                 </p>
               )}
               {canScheduleManage && ttSectionId && (
-                <Button onClick={openAddSlot}>
-                  <Plus className="h-4 w-4" />
-                  Add Period
-                </Button>
+                <div className="flex gap-2">
+                  <Button variant="outline" onClick={openGenerateDialog}>
+                    <Wand2 className="h-4 w-4" />
+                    Generate Timetable
+                  </Button>
+                  <Button onClick={openAddSlot}>
+                    <Plus className="h-4 w-4" />
+                    Add Period
+                  </Button>
+                </div>
               )}
             </CardHeader>
             <CardContent className="pt-0">
@@ -990,6 +1082,151 @@ export default function SchedulePage() {
               </Button>
               <Button type="submit" loading={saveSlot.isPending}>
                 {editingSlot ? 'Save Changes' : 'Add Period'}
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
+
+      {/* Generate Timetable dialog */}
+      <Dialog open={genOpen} onOpenChange={setGenOpen}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>Generate Timetable</DialogTitle>
+            <DialogDescription>
+              Give it your subjects and periods/week - it fills this section's empty timetable cells automatically, without double-booking any teacher.
+            </DialogDescription>
+          </DialogHeader>
+          <form onSubmit={submitGenerate} className="space-y-4">
+            <Field label="Working days" required>
+              <div className="flex flex-wrap gap-3 rounded-lg border border-input px-3 py-2">
+                {DAY_OPTIONS.map((d) => (
+                  <label key={d} className="flex items-center gap-1.5 text-sm">
+                    <input type="checkbox" checked={genForm.workingDays.includes(d)} onChange={() => toggleGenDay(d)} />
+                    {DAY_NAMES[d].slice(0, 3)}
+                  </label>
+                ))}
+              </div>
+            </Field>
+            <div className="grid grid-cols-3 gap-4">
+              <Field label="Periods/day" required>
+                <Input
+                  type="number"
+                  min={1}
+                  max={12}
+                  value={genForm.periodsPerDay}
+                  onChange={(e) => setGenForm((f) => ({ ...f, periodsPerDay: e.target.value }))}
+                  required
+                />
+              </Field>
+              <Field label="First period starts" required>
+                <Input
+                  type="time"
+                  value={genForm.periodStartTime}
+                  onChange={(e) => setGenForm((f) => ({ ...f, periodStartTime: e.target.value }))}
+                  required
+                />
+              </Field>
+              <Field label="Period length (min)" required>
+                <Input
+                  type="number"
+                  min={10}
+                  max={180}
+                  value={genForm.periodDurationMinutes}
+                  onChange={(e) => setGenForm((f) => ({ ...f, periodDurationMinutes: e.target.value }))}
+                  required
+                />
+              </Field>
+            </div>
+
+            <div className="space-y-2">
+              <Label>Subjects &amp; periods/week</Label>
+              <div className="space-y-2 rounded-lg border border-border p-2">
+                {genRows.map((row, i) => (
+                  <div key={i} className="grid grid-cols-[1fr_5.5rem_1fr_auto] items-end gap-2">
+                    <Select value={row.subjectId} onValueChange={(v) => updateGenRow(i, { subjectId: v })}>
+                      <SelectTrigger>
+                        <SelectValue placeholder="Subject" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {(subjectsQuery.data ?? []).map((s) => (
+                          <SelectItem key={s.id} value={s.id}>
+                            {s.name}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <Input
+                      type="number"
+                      min={1}
+                      max={30}
+                      placeholder="Periods/wk"
+                      value={row.periodsPerWeek}
+                      onChange={(e) => updateGenRow(i, { periodsPerWeek: e.target.value })}
+                    />
+                    <Select value={row.teacherId} onValueChange={(v) => updateGenRow(i, { teacherId: v })}>
+                      <SelectTrigger>
+                        <SelectValue placeholder="Teacher (optional)" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="__none__">Unassigned</SelectItem>
+                        {teacherOptions.map((t) => (
+                          <SelectItem key={t.id} value={t.id}>
+                            {t.label}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      className="text-destructive hover:bg-destructive/10 hover:text-destructive"
+                      onClick={() => removeGenRow(i)}
+                      disabled={genRows.length === 1}
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </Button>
+                  </div>
+                ))}
+              </div>
+              <Button type="button" variant="outline" size="sm" onClick={addGenRow}>
+                <Plus className="h-4 w-4" />
+                Add Subject
+              </Button>
+            </div>
+
+            <label className="flex items-center gap-2 text-sm text-muted-foreground">
+              <input
+                type="checkbox"
+                checked={genForm.replaceExisting}
+                onChange={(e) => setGenForm((f) => ({ ...f, replaceExisting: e.target.checked }))}
+              />
+              Wipe this section's existing timetable first and regenerate from scratch
+            </label>
+
+            {genError && (
+              <div className="rounded-lg border border-destructive/20 bg-destructive/5 px-3 py-2 text-sm text-destructive">{genError}</div>
+            )}
+            {genResult && (
+              <div className="space-y-1 rounded-lg border border-primary/20 bg-primary/5 px-3 py-2 text-sm text-foreground">
+                <p className="font-medium">{genResult.created} period(s) scheduled.</p>
+                {genResult.warnings?.length > 0 && (
+                  <ul className="list-inside list-disc text-xs text-muted-foreground">
+                    {genResult.warnings.map((w, i) => (
+                      <li key={i}>{w}</li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+            )}
+            <DialogFooter>
+              <Button type="button" variant="outline" onClick={() => setGenOpen(false)}>
+                Close
+              </Button>
+              <Button type="submit" loading={generateTimetable.isPending}>
+                <Wand2 className="h-4 w-4" />
+                Generate
               </Button>
             </DialogFooter>
           </form>

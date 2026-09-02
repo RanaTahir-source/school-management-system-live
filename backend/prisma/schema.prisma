@@ -85,6 +85,8 @@ model School {
   departments      Department[]
   designations     Designation[]
   quizzes          Quiz[]
+  houses           House[]
+  accountHeads     AccountHead[]
 
   createdAt DateTime  @default(now()) @map("created_at")
   updatedAt DateTime  @updatedAt @map("updated_at")
@@ -235,6 +237,8 @@ model User {
   chatCallsStarted             ChatCall[] @relation("ChatCallStartedBy")
   departmentsHeaded            Department[] @relation("DepartmentHead")
   quizzesCreated                Quiz[] @relation("QuizCreatedBy")
+  housesInCharge                House[] @relation("HouseInCharge")
+  housePointsAwarded            HousePointEntry[] @relation("HousePointAwardedBy")
 
   createdAt    DateTime  @default(now()) @map("created_at")
   updatedAt    DateTime  @updatedAt @map("updated_at")
@@ -496,6 +500,9 @@ model StudentProfile {
 
   sectionId String?  @map("section_id") // current section, null until assigned
   section   Section? @relation(fields: [sectionId], references: [id])
+
+  houseId String? @map("house_id") // school House (sports/discipline team), null until assigned - independent of academic section
+  house   House?  @relation(fields: [houseId], references: [id])
 
   routeStopId String?    @map("route_stop_id") // school transport pickup point, null if not using transport
   routeStop   RouteStop? @relation(fields: [routeStopId], references: [id])
@@ -831,6 +838,13 @@ model IncomeRecord {
   date        DateTime @db.Date
   description String?
 
+  // Optional formal Chart-of-Accounts tag, additive alongside the free-text
+  // category above - existing rows and reports keep working unchanged, and
+  // a school can start tagging NEW entries against a real account head
+  // whenever they set one up, without a data migration.
+  accountHeadId String?      @map("account_head_id")
+  accountHead   AccountHead? @relation(fields: [accountHeadId], references: [id])
+
   receivedById String @map("received_by_id")
   receivedBy   User   @relation("IncomeReceivedBy", fields: [receivedById], references: [id])
 
@@ -862,6 +876,11 @@ model ExpenseRecord {
   amount      Decimal  @db.Decimal(12, 2)
   date        DateTime @db.Date
   description String?
+
+  // Optional formal Chart-of-Accounts tag - see the matching field on
+  // IncomeRecord above for why this is additive, not a replacement.
+  accountHeadId String?      @map("account_head_id")
+  accountHead   AccountHead? @relation(fields: [accountHeadId], references: [id])
 
   recordedById String @map("recorded_by_id")
   recordedBy   User   @relation("ExpenseRecordedBy", fields: [recordedById], references: [id])
@@ -2882,4 +2901,99 @@ model QuizAnswer {
 
   @@unique([attemptId, questionId])
   @@map("quiz_answers")
+}
+
+// ═══════════════════════════════════════════════════
+// MILESTONE 15 — HOUSES  (sports/discipline teams, independent of academic
+// Sections - a student's House stays the same across years even as they
+// move up through classes/sections)
+// ═══════════════════════════════════════════════════
+model House {
+  id       String @id @default(uuid())
+  schoolId String @map("school_id")
+  school   School @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+
+  name     String
+  colorHex String? @map("color_hex") // e.g. "#DC2626" for the leaderboard chip
+  isActive Boolean @default(true) @map("is_active")
+
+  inChargeId String? @map("in_charge_id") // usually a Teacher/Coordinator who runs this house
+  inCharge   User?   @relation("HouseInCharge", fields: [inChargeId], references: [id])
+
+  // Running total, kept in sync with pointEntries inside a transaction each
+  // time a point entry is awarded - cheap to read for the leaderboard
+  // instead of summing every entry on every page load.
+  totalPoints Int @default(0) @map("total_points")
+
+  students     StudentProfile[]
+  pointEntries HousePointEntry[]
+
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime  @updatedAt @map("updated_at")
+  deletedAt DateTime? @map("deleted_at")
+
+  @@unique([schoolId, name])
+  @@map("houses")
+}
+
+// A single points award/deduction, e.g. "+20 Sports Day relay win",
+// "-5 Uniform violation" - the append-only log behind House.totalPoints.
+model HousePointEntry {
+  id      String @id @default(uuid())
+  houseId String @map("house_id")
+  house   House  @relation(fields: [houseId], references: [id], onDelete: Cascade)
+
+  points   Int // positive to award, negative to deduct
+  reason   String
+  category String? // free text e.g. "Sports", "Academics", "Discipline", "Event"
+  date     DateTime @default(now()) @db.Date
+
+  awardedById String @map("awarded_by_id")
+  awardedBy   User   @relation("HousePointAwardedBy", fields: [awardedById], references: [id])
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@index([houseId, date])
+  @@map("house_point_entries")
+}
+
+// ═══════════════════════════════════════════════════
+// MILESTONE 15 — CHART OF ACCOUNTS  (formal account heads that Income/
+// Expense records can optionally be tagged against, additive alongside the
+// existing free-text "category" field - see IncomeRecord/ExpenseRecord)
+// ═══════════════════════════════════════════════════
+enum AccountType {
+  ASSET
+  LIABILITY
+  EQUITY
+  INCOME
+  EXPENSE
+}
+
+model AccountHead {
+  id       String @id @default(uuid())
+  schoolId String @map("school_id")
+  school   School @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+
+  name String
+  code String? // optional account code, e.g. "4001" - schools that already run a numbered chart of accounts can mirror it here
+  type AccountType
+
+  // Optional parent for a simple two/three-level hierarchy, e.g. "Tuition
+  // Fee" and "Donations" both under a top-level "Income" head.
+  parentId String?      @map("parent_id")
+  parent   AccountHead? @relation("AccountHeadParent", fields: [parentId], references: [id])
+  children AccountHead[] @relation("AccountHeadParent")
+
+  isActive Boolean @default(true) @map("is_active")
+
+  incomeRecords  IncomeRecord[]
+  expenseRecords ExpenseRecord[]
+
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime  @updatedAt @map("updated_at")
+  deletedAt DateTime? @map("deleted_at")
+
+  @@unique([schoolId, name])
+  @@map("account_heads")
 }

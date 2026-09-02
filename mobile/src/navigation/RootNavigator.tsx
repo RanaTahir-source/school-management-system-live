@@ -12,6 +12,11 @@ import ParentFeeScreen from '@/screens/ParentFeeScreen';
 import ParentAttendanceScreen from '@/screens/ParentAttendanceScreen';
 import ParentResultScreen from '@/screens/ParentResultScreen';
 import FamilyLedgerScreen from '@/screens/FamilyLedgerScreen';
+import TimetableScreen from '@/screens/TimetableScreen';
+import MarkAttendanceScreen from '@/screens/MarkAttendanceScreen';
+import LeaveScreen from '@/screens/LeaveScreen';
+import AnnouncementsScreen from '@/screens/AnnouncementsScreen';
+import StaffDirectoryScreen from '@/screens/StaffDirectoryScreen';
 
 export type RootStackParamList = {
   Home: undefined;
@@ -25,6 +30,13 @@ export type RootStackParamList = {
   ParentAttendance: { studentId: string; studentName: string; studentAdmissionNo: string };
   ParentResult: { studentId: string; studentName: string; studentAdmissionNo: string };
   FamilyLedger: undefined;
+  // Staff screens - reached from Home when the logged-in user has the
+  // TEACHER, PRINCIPAL, ADMIN, or DIRECTOR role.
+  Timetable: undefined;
+  MarkAttendance: undefined;
+  Leave: undefined;
+  Announcements: undefined;
+  StaffDirectory: undefined;
 };
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
@@ -78,6 +90,12 @@ export default function RootNavigator() {
         options={({ route }) => ({ title: `Results · ${route.params.studentName}` })}
       />
       <Stack.Screen name="FamilyLedger" component={FamilyLedgerScreen} options={{ title: 'Family Ledger' }} />
+
+      <Stack.Screen name="Timetable" component={TimetableScreen} options={{ title: 'My Timetable' }} />
+      <Stack.Screen name="MarkAttendance" component={MarkAttendanceScreen} options={{ title: 'Mark Attendance' }} />
+      <Stack.Screen name="Leave" component={LeaveScreen} options={{ title: 'Leave Requests' }} />
+      <Stack.Screen name="Announcements" component={AnnouncementsScreen} options={{ title: 'Announcements' }} />
+      <Stack.Screen name="StaffDirectory" component={StaffDirectoryScreen} options={{ title: 'Staff Directory' }} />
     </Stack.Navigator>
   );
 }

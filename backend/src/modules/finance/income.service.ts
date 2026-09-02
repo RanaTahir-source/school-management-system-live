@@ -15,6 +15,7 @@ export class IncomeService {
         schoolId: dto.schoolId,
         branchId: dto.branchId,
         studentId: dto.studentId,
+        accountHeadId: dto.accountHeadId,
         category: dto.category,
         amount: dto.amount,
         date: new Date(dto.date),
@@ -45,6 +46,7 @@ export class IncomeService {
             }
           : {}),
       },
+      include: { accountHead: { select: { id: true, name: true, type: true } } },
       orderBy: { date: 'desc' },
     });
   }

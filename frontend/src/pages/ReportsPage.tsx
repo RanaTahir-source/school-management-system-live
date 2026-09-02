@@ -214,53 +214,28 @@ export default function ReportsPage() {
               ) : !admissionsQuery.data?.students.length ? (
                 <EmptyState icon={UserPlus} label="No admissions in this period" />
               ) : (
-                <>
-                  <div className="mb-5 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6">
-                    <div className="col-span-2 flex items-center justify-between rounded-lg border border-primary/20 bg-primary/5 p-4 sm:col-span-1 lg:col-span-2">
-                      <div>
-                        <p className="text-xs font-medium text-muted-foreground">Total Admissions</p>
-                        <p className="mt-1 text-2xl font-semibold tabular-nums text-foreground">
-                          {admissionsQuery.data.totalAdmissions}
-                        </p>
-                      </div>
-                      <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
-                        <UserPlus className="h-5 w-5" />
-                      </div>
+                // Summary only - the per-student list is what "Export CSV"
+                // above is for; showing it inline as well made this tab feel
+                // like a raw data dump rather than a report.
+                <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6">
+                  <div className="col-span-2 flex items-center justify-between rounded-lg border border-primary/20 bg-primary/5 p-4 sm:col-span-1 lg:col-span-2">
+                    <div>
+                      <p className="text-xs font-medium text-muted-foreground">Total Admissions</p>
+                      <p className="mt-1 text-2xl font-semibold tabular-nums text-foreground">
+                        {admissionsQuery.data.totalAdmissions}
+                      </p>
                     </div>
-                    {admissionsQuery.data.byClass.map((c) => (
-                      <div key={c.className} className="rounded-lg border border-border p-3.5">
-                        <p className="truncate text-xs font-medium text-muted-foreground">{c.className}</p>
-                        <p className="mt-1 text-lg font-semibold tabular-nums text-foreground">{c.count}</p>
-                      </div>
-                    ))}
+                    <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
+                      <UserPlus className="h-5 w-5" />
+                    </div>
                   </div>
-                  <Table>
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead>Admission No</TableHead>
-                        <TableHead>Student</TableHead>
-                        <TableHead>Class</TableHead>
-                        <TableHead>Admission Date</TableHead>
-                        <TableHead>Guardian</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {admissionsQuery.data.students.map((s) => (
-                        <TableRow key={s.studentId}>
-                          <TableCell className="tabular-nums text-muted-foreground">{s.admissionNo}</TableCell>
-                          <TableCell className="font-medium text-foreground">{s.fullName}</TableCell>
-                          <TableCell className="text-muted-foreground">
-                            {s.className} {s.sectionName !== '—' && `— ${s.sectionName}`}
-                          </TableCell>
-                          <TableCell className="text-muted-foreground">{formatDate(s.admissionDate)}</TableCell>
-                          <TableCell className="text-muted-foreground">
-                            {s.guardianName ?? '—'} {s.guardianPhone ? `(${s.guardianPhone})` : ''}
-                          </TableCell>
-                        </TableRow>
-                      ))}
-                    </TableBody>
-                  </Table>
-                </>
+                  {admissionsQuery.data.byClass.map((c) => (
+                    <div key={c.className} className="rounded-lg border border-border p-3.5">
+                      <p className="truncate text-xs font-medium text-muted-foreground">{c.className}</p>
+                      <p className="mt-1 text-lg font-semibold tabular-nums text-foreground">{c.count}</p>
+                    </div>
+                  ))}
+                </div>
               )}
             </CardContent>
           </Card>

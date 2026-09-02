@@ -34,22 +34,24 @@ Scan the QR code with the **Expo Go** app (Android/iOS) to test on your phone, o
 
 ## Who can log in right now
 
-Any existing school login works (Student, Teacher, Director, etc.), but only **Student** and **Parent** accounts currently see feature screens - other roles get a "coming soon" placeholder for now (attendance-marking, admin tools, etc. are still web-only).
+Any existing school login works. **Student** and **Parent** accounts see the fee/attendance/results self-service screens; **Teacher** accounts see their timetable, attendance marking, and leave; **Principal/Admin/Director** accounts see a school stats snapshot, staff directory, and leave approvals. Any other role (Accountant, Receptionist, Coordinator, etc.) still gets a "not supported on mobile yet" placeholder for now.
 
-**Parents** can now log in with their own account (linked to one or more children via `ParentStudent`). One child: the menu goes straight to that child's Fee/Attendance/Results. Two or more children: "My Children" shows a card per child (single-single) plus a **Family Ledger** card with the combined fee total across all of them.
+**Parents** can log in with their own account (linked to one or more children via `ParentStudent`). One child: the menu goes straight to that child's Fee/Attendance/Results. Two or more children: "My Children" shows a card per child (single-single) plus a **Family Ledger** card with the combined fee total across all of them.
 
-## What's built (v1)
+## What's built (v2)
 
 - Login (JWT, auto-refresh, secure on-device token storage)
 - Fee Status: invoices, balances, and receipt PDFs (view/share/save) - Student and Parent
 - Attendance: month-by-month present/absent/late/leave history - Student and Parent
 - Results: exam list + report card PDF (view/share/save) - Student and Parent
 - Parent: multi-child list, per-child menu, and a combined Family Ledger (total charged/paid/balance across all linked children)
+- Teacher: weekly timetable, mark attendance for the section(s) they're the class teacher of, apply for leave, view announcements
+- Principal/Admin/Director: quick school stats (student/teacher counts, today's attendance %, pending leave), staff directory (search by name/employee ID), approve/reject leave requests, view announcements
 
 ## What's not built yet
 
 - **Push notifications / notices** - needs a new backend module (device token registration + a Notice model + a send endpoint) before this can be wired up. Bigger scope, planned as a follow-up.
-- **Staff features on mobile** (marking attendance, entering marks, admin tools) - web portal only for now; Teacher is the next planned milestone.
+- **Entering exam marks and other admin tools on mobile** - still web portal only for now.
 
 ## Building a real app (APK / TestFlight)
 

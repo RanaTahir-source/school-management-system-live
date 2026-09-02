@@ -10,6 +10,10 @@ export class UpdateIncomeDto {
   studentId?: string;
 
   @IsOptional()
+  @IsUUID()
+  accountHeadId?: string;
+
+  @IsOptional()
   @IsString()
   category?: string;
 
